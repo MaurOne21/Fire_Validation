@@ -1,103 +1,93 @@
-"""This module contains the function's business logic.
-
-Use the automation_context module to wrap your function in an Automate context helper.
-"""
-
-from pydantic import Field, SecretStr
+# main.py
+# Questo è il punto di ingresso per le nostre automazioni Speckle.
+# Iniziamo con la Regola #1: Il Censimento Antincendio.
+ 
 from speckle_automate import (
-    AutomateBase,
     AutomationContext,
-    execute_automate_function,
+    execute_automation,
+    automation_run,
 )
-
-from flatten import flatten_base
-
-
-class FunctionInputs(AutomateBase):
-    """These are function author-defined values.
-
-    Automate will make sure to supply them matching the types specified here.
-    Please use the pydantic model schema to define your inputs:
-    https://docs.pydantic.dev/latest/usage/models/
+from speckle_automate.helpers import get_speckle_objects_from_commit_by_type
+ 
+# Definiamo i tipi di oggetti che vogliamo controllare.
+# Questi sono i tipi standard di Speckle per muri e solai.
+TARGET_TYPES = ["Objects.BuiltElements.Wall", "Objects.BuiltElements.Floor"]
+# Definiamo il nome esatto del parametro che cercheremo.
+FIRE_RATING_PARAM = "FireRating"
+ 
+ 
+@automation_run
+def run_function(ctx: AutomationContext) -> None:
     """
-
-    # An example of how to use secret values.
-    whisper_message: SecretStr = Field(title="This is a secret message")
-    forbidden_speckle_type: str = Field(
-        title="Forbidden speckle type",
-        description=(
-            "If a object has the following speckle_type,"
-            " it will be marked with an error."
-        ),
+    Questa è la funzione principale che Speckle eseguirà ad ogni commit
+    sullo stream a cui collegheremo questa automazione.
+    """
+    print("Automazione avviata: Esecuzione Regola #1 - Censimento Antincendio.")
+ 
+    # 1. Otteniamo il modello dal commit che ha attivato l'automazione.
+    commit_root_object = ctx.get_commit_root()
+ 
+    # 2. Usiamo una funzione di supporto per trovare tutti gli oggetti dei tipi
+    #    che ci interessano (muri e solai) nel modello.
+    objects_to_check = get_speckle_objects_from_commit_by_type(
+        commit_root_object, TARGET_TYPES
     )
-
-
-def automate_function(
-    automate_context: AutomationContext,
-    function_inputs: FunctionInputs,
-) -> None:
-    """This is an example Speckle Automate function.
-
-    Args:
-        automate_context: A context-helper object that carries relevant information
-            about the runtime context of this function.
-            It gives access to the Speckle project data that triggered this run.
-            It also has convenient methods for attaching results to the Speckle model.
-        function_inputs: An instance object matching the defined schema.
-    """
-    # The context provides a convenient way to receive the triggering version.
-    version_root_object = automate_context.receive_version()
-
-    objects_with_forbidden_speckle_type = [
-        b
-        for b in flatten_base(version_root_object)
-        if b.speckle_type == function_inputs.forbidden_speckle_type
-    ]
-    count = len(objects_with_forbidden_speckle_type)
-
-    if count > 0:
-        # This is how a run is marked with a failure cause.
-        automate_context.attach_error_to_objects(
-            category="Forbidden speckle_type"
-            f" ({function_inputs.forbidden_speckle_type})",
-            affected_objects=objects_with_forbidden_speckle_type,
-            message="This project should not contain the type: "
-            f"{function_inputs.forbidden_speckle_type}",
+    print(f"Trovati {len(objects_to_check)} muri e solai da controllare.")
+ 
+    # 3. Chiamiamo la nostra funzione di validazione.
+    validation_errors = check_fire_rating_parameter(objects_to_check)
+ 
+    # 4. In base al risultato, decidiamo se l'automazione è passata o fallita.
+    if validation_errors:
+        # Se ci sono errori, l'automazione fallisce.
+        # Creiamo un messaggio di errore chiaro che elenca gli ID degli elementi problematici.
+        error_message = f"Validazione fallita: {len(validation_errors)} elementi non hanno il parametro '{FIRE_RATING_PARAM}' compilato."
+       
+        # Aggiungiamo gli ID degli elementi all'errore per una facile identificazione.
+        ctx.attach_error_to_objects(
+            category=f"Validazione Dati: {FIRE_RATING_PARAM}",
+            object_ids=validation_errors,
+            message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante o vuoto.",
         )
-        automate_context.mark_run_failed(
-            "Automation failed: "
-            f"Found {count} object that have one of the forbidden speckle types: "
-            f"{function_inputs.forbidden_speckle_type}"
-        )
-
-        # Set the automation context view to the original model/version view
-        # to show the offending objects.
-        automate_context.set_context_view()
-
+       
+        ctx.mark_run_failed(error_message)
+        print(error_message)
+ 
     else:
-        automate_context.mark_run_success("No forbidden types found.")
-
-    # If the function generates file results, this is how it can be
-    # attached to the Speckle project/model
-    # automate_context.store_file_result("./report.pdf")
-
-
-def automate_function_without_inputs(automate_context: AutomationContext) -> None:
-    """A function example without inputs.
-
-    If your function does not need any input variables,
-     besides what the automation context provides,
-     the inputs argument can be omitted.
+        # Se non ci sono errori, l'automazione ha successo!
+        success_message = "Validazione superata: Tutti i muri e solai hanno il parametro 'FireRating' compilato."
+        ctx.mark_run_succeeded(success_message)
+        print(success_message)
+ 
+    print("Automazione completata.")
+ 
+ 
+def check_fire_rating_parameter(objects: list) -> list[str]:
     """
-    pass
-
-
-# make sure to call the function with the executor
+    Controlla una lista di oggetti Speckle per verificare la presenza
+    e la compilazione del parametro 'FireRating'.
+ 
+    Args:
+        objects: Una lista di oggetti Speckle da controllare.
+ 
+    Returns:
+        Una lista di ID degli oggetti che non superano la validazione.
+    """
+    elements_with_errors = []
+    for obj in objects:
+        # Controlliamo se il parametro esiste nell'oggetto.
+        # Usiamo .get() per evitare errori se il parametro non esiste.
+        fire_rating_value = obj.get(FIRE_RATING_PARAM)
+ 
+        # La validazione fallisce se il parametro non esiste (None)
+        # o se è una stringa vuota ("").
+        if fire_rating_value is None or fire_rating_value == "":
+            print(f"ERRORE: L'elemento {obj.id} non ha un {FIRE_RATING_PARAM} valido.")
+            elements_with_errors.append(obj.id)
+           
+    return elements_with_errors
+ 
+ 
 if __name__ == "__main__":
-    # NOTE: always pass in the automate function by its reference; do not invoke it!
-
-    # Pass in the function reference with the inputs schema to the executor.
-    execute_automate_function(automate_function, FunctionInputs)
-
-    # If the function has no arguments, the executor can handle it like so
-    # execute_automate_function(automate_function_without_inputs)
+    # Questa parte serve per testare lo script localmente in futuro.
+    execute_automation(run_function)
