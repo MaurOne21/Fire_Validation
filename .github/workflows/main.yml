@@ -17,13 +17,10 @@ jobs:
         run: |
           pip install .[dev]
       
-      # --- SOLUZIONE ROBUSTA ---
-      # Creiamo un file JSON fittizio e passiamo il suo percorso assoluto.
+      # --- SOLUZIONE DEFINITIVA ---
+      # Creiamo un file JSON fittizio in un percorso fisso che l'azione si aspetta.
       - name: Create dummy schema file
-        id: schema_file
-        run: |
-          echo "{}" > ${{ github.workspace }}/functionSchema.json
-          echo "path=${{ github.workspace }}/functionSchema.json" >> $GITHUB_OUTPUT
+        run: echo "{}" > /home/runner/functionSchema.json
 
       - name: Speckle Automate Function - Build and Publish
         uses: specklesystems/speckle-automate-github-composite-action@0.8.1
@@ -31,6 +28,6 @@ jobs:
           speckle_automate_url: ${{ env.SPECKLE_AUTOMATE_URL || vars.SPECKLE_AUTOMATE_URL || 'https://automate.speckle.dev' }}
           speckle_token: ${{ secrets.SPECKLE_FUNCTION_TOKEN }}
           speckle_function_id: ${{ secrets.SPECKLE_FUNCTION_ID }}
-          # Passiamo il percorso assoluto del nostro file fittizio.
-          speckle_function_input_schema_file_path: ${{ steps.schema_file.outputs.path }}
+          # Passiamo il percorso fisso del nostro file fittizio.
+          speckle_function_input_schema_file_path: "/home/runner/functionSchema.json"
           speckle_function_command: "python -u main.py run"
