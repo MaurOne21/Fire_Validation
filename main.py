@@ -86,12 +86,3 @@ def check_fire_rating_parameter(objects: list) -> list[str]:
             elements_with_errors.append(obj.id)
             
     return elements_with_errors
-```
-
-Ho aggiornato il codice rimuovendo l'import problematico e il decoratore `@automation_run`, e rinominando la funzione principale in `main`, come richiesto dal nuovo standard di Speckle.
-
-Ora devi solo seguire la stessa procedura di prima:
-1.  **Aggiorna** il file `main.py` sul tuo repository GitHub con questo nuovo codice.
-2.  **Pubblica una nuova release** (es. `v1.0.2`) per attivare l'aggiornamento.
-
-Questa volta l'azione su GitHub avrà successo e la tua funzione apparirà su Speckle. Forza, siamo all'ultimo pas
