@@ -11,8 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4.1.7
 
-      # NOTA: Non servono più passaggi per creare file fittizi.
-      # L'azione troverà il file 'functionSchema.json' che abbiamo committato.
+      # --- SOLUZIONE DEFINITIVA ---
+      # Creiamo un file JSON fittizio nella home directory del runner,
+      # che è il percorso esatto dove l'azione lo sta cercando.
+      - name: Create dummy schema file in HOME directory
+        run: echo "{}" > ${{ env.HOME }}/functionSchema.json
 
       - name: Speckle Automate Function - Build and Publish
         uses: specklesystems/speckle-automate-github-composite-action@0.8.1
@@ -20,5 +23,6 @@ jobs:
           speckle_automate_url: ${{ env.SPECKLE_AUTOMATE_URL || vars.SPECKLE_AUTOMATE_URL || 'https://automate.speckle.dev' }}
           speckle_token: ${{ secrets.SPECKLE_FUNCTION_TOKEN }}
           speckle_function_id: ${{ secrets.SPECKLE_FUNCTION_ID }}
-          speckle_function_input_schema_file_path: "functionSchema.json"
+          # Passiamo il percorso assoluto del nostro file fittizio.
+          speckle_function_input_schema_file_path: "${{ env.HOME }}/functionSchema.json"
           speckle_function_command: "python -u main.py run"
