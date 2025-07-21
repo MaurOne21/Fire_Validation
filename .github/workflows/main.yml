@@ -16,12 +16,18 @@ jobs:
       - name: Install dependencies
         run: |
           pip install .[dev]
-      # NOTA: Il passaggio "Extract functionInputSchema" è stato rimosso.
+      
+      # --- NUOVA SOLUZIONE ---
+      # Creiamo un file JSON fittizio e vuoto per soddisfare l'azione di Speckle.
+      - name: Create dummy schema file
+        run: echo "{}" > functionSchema.json
+
       - name: Speckle Automate Function - Build and Publish
         uses: specklesystems/speckle-automate-github-composite-action@0.8.1
         with:
           speckle_automate_url: ${{ env.SPECKLE_AUTOMATE_URL || vars.SPECKLE_AUTOMATE_URL || 'https://automate.speckle.dev' }}
           speckle_token: ${{ secrets.SPECKLE_FUNCTION_TOKEN }}
           speckle_function_id: ${{ secrets.SPECKLE_FUNCTION_ID }}
-          # NOTA: Il parametro 'speckle_function_input_schema_file_path' è stato rimosso.
+          # Passiamo il percorso del nostro file fittizio.
+          speckle_function_input_schema_file_path: "functionSchema.json"
           speckle_function_command: "python -u main.py run"
