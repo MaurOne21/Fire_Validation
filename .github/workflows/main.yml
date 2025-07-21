@@ -28,5 +28,8 @@ jobs:
           speckle_automate_url: ${{ env.SPECKLE_AUTOMATE_URL || vars.SPECKLE_AUTOMATE_URL || 'https://automate.speckle.dev' }}
           speckle_token: ${{ secrets.SPECKLE_FUNCTION_TOKEN }}
           speckle_function_id: ${{ secrets.SPECKLE_FUNCTION_ID }}
-          speckle_function_input_schema_file_path: ${{ env.FUNCTION_SCHEMA_FILE_NAME }}
+          # --- QUESTA È LA RIGA MODIFICATA ---
+          # Invece di cercare un file, passiamo una stringa vuota per dire all'azione
+          # che il nostro script non ha bisogno di un file di schema.
+          speckle_function_input_schema_file_path: ""
           speckle_function_command: "python -u main.py run"
