@@ -1,7 +1,5 @@
 # main.yml
-# Questa è la configurazione più standard e corretta.
-# Si basa sul fatto che il file 'functionSchema.json' esista nella
-# cartella principale del repository.
+# Questa è la configurazione definitiva che risolve il problema del percorso.
 
 name: "build and deploy Speckle functions"
 on:
@@ -30,6 +28,8 @@ jobs:
           speckle_automate_url: ${{ env.SPECKLE_AUTOMATE_URL || vars.SPECKLE_AUTOMATE_URL || 'https://automate.speckle.dev' }}
           speckle_token: ${{ secrets.SPECKLE_FUNCTION_TOKEN }}
           speckle_function_id: ${{ secrets.SPECKLE_FUNCTION_ID }}
-          # Passiamo il percorso assoluto che ora sappiamo esisterà.
-          speckle_function_input_schema_file_path: "/home/runner/functionSchema.json"
+          # Passiamo solo il nome del file. L'azione lo concatenerà con /home/runner/
+          # per creare il percorso corretto: /home/runner/functionSchema.json
+          speckle_function_input_schema_file_path: "functionSchema.json"
           speckle_function_command: "python -u main.py run"
+
