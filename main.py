@@ -1,5 +1,5 @@
 # main.py
-# Versione con logging migliorato per il debug.
+# Versione con logging e ispezione degli oggetti migliorati per il debug.
 
 from speckle_automate import (
     AutomationContext,
@@ -41,8 +41,6 @@ def main(ctx: AutomationContext) -> None:
     """
     Questa è la funzione principale che Speckle eseguirà ad ogni commit.
     """
-    # --- NUOVO BLOCCO DI DEBUG ---
-    # Questi print ci aiuteranno a capire se lo script viene eseguito correttamente.
     print("--------------------------------------------------")
     print("SPECKLE AUTOMATE SCRIPT ESEGUITO CORRETTAMENTE")
     print(f"Stream ID: {ctx.stream_id}")
@@ -51,25 +49,17 @@ def main(ctx: AutomationContext) -> None:
     
     print("Automazione avviata: Esecuzione Regola #1 - Censimento Antincendio.")
 
-    # 1. Otteniamo il modello dal commit che ha attivato l'automazione.
     commit_root_object = ctx.get_commit_root()
-
-    # 2. Usiamo la nostra nuova funzione per trovare tutti gli oggetti dei tipi
-    #    che ci interessano (muri e solai) nel modello.
     objects_to_check = find_objects_by_type(commit_root_object, TARGET_TYPES)
     print(f"Trovati {len(objects_to_check)} muri e solai da controllare.")
 
-    # --- NUOVO CONTROLLO ---
-    # Se non troviamo nessun oggetto, terminiamo con successo.
     if not objects_to_check:
         ctx.mark_run_succeeded("Nessun muro o solaio trovato nel commit. Controllo non necessario.")
         print("Nessun oggetto target trovato. Uscita.")
         return
 
-    # 3. Chiamiamo la nostra funzione di validazione.
     validation_errors = check_fire_rating_parameter(objects_to_check)
 
-    # 4. In base al risultato, decidiamo se l'automazione è passata o fallita.
     if validation_errors:
         error_message = f"Validazione fallita: {len(validation_errors)} elementi non hanno il parametro '{FIRE_RATING_PARAM}' compilato."
         
@@ -78,7 +68,6 @@ def main(ctx: AutomationContext) -> None:
             object_ids=validation_errors,
             message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante o vuoto.",
         )
-        
         ctx.mark_run_failed(error_message)
         print(error_message)
 
@@ -96,10 +85,31 @@ def check_fire_rating_parameter(objects: list) -> list[str]:
     e la compilazione del parametro 'FireRating'.
     """
     elements_with_errors = []
+    
+    # --- BLOCCO DI ISPEZIONE OGGETTO ---
+    # Stampiamo le proprietà del primo oggetto trovato per ispezionare la sua struttura.
+    if objects:
+        first_obj = objects[0]
+        print("\n--- ISPEZIONE DEL PRIMO OGGETTO TROVATO ---")
+        print(f"ID Oggetto: {getattr(first_obj, 'id', 'N/A')}")
+        print(f"Speckle Type: {getattr(first_obj, 'speckle_type', 'N/A')}")
+        print("Proprietà disponibili:")
+        for prop in first_obj.get_member_names():
+            try:
+                value = getattr(first_obj, prop)
+                # Stampa solo valori semplici per non intasare i log
+                if isinstance(value, (str, int, float, bool)) or value is None:
+                    print(f"  - {prop}: {value}")
+            except:
+                continue
+        print("-----------------------------------------\n")
+
     for obj in objects:
         fire_rating_value = obj.get(FIRE_RATING_PARAM)
 
-        if fire_rating_value is None or fire_rating_value == "":
+        # La validazione fallisce se il parametro non esiste (None)
+        # o se è una stringa vuota o contiene solo spazi.
+        if fire_rating_value is None or not str(fire_rating_value).strip():
             print(f"ERRORE: L'elemento {obj.id} non ha un {FIRE_RATING_PARAM} valido.")
             elements_with_errors.append(obj.id)
             
