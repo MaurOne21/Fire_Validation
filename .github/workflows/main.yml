@@ -1,3 +1,8 @@
+# main.yml
+# Questa è la configurazione più standard e corretta.
+# Si basa sul fatto che il file 'functionSchema.json' esista nella
+# cartella principale del repository.
+
 name: "build and deploy Speckle functions"
 on:
   workflow_dispatch:
@@ -9,17 +14,17 @@ jobs:
   publish-automate-function-version:
     runs-on: ubuntu-latest
     steps:
+      # 1. Fa il checkout del tuo codice, inclusi main.py e functionSchema.json
       - uses: actions/checkout@v4.1.7
 
+      # 2. Esegue l'azione di Speckle
       - name: Speckle Automate Function - Build and Publish
         uses: specklesystems/speckle-automate-github-composite-action@0.8.1
         with:
           speckle_automate_url: ${{ env.SPECKLE_AUTOMATE_URL || vars.SPECKLE_AUTOMATE_URL || 'https://automate.speckle.dev' }}
           speckle_token: ${{ secrets.SPECKLE_FUNCTION_TOKEN }}
           speckle_function_id: ${{ secrets.SPECKLE_FUNCTION_ID }}
-          speckle_function_input_schema_file_path: "${{ github.workspace }}/functionSchema.json"
+          # Passiamo un percorso relativo al file che si trova nella root del progetto.
+          # Questa è la sintassi standard che dovrebbe funzionare.
+          speckle_function_input_schema_file_path: "functionSchema.json"
           speckle_function_command: "python -u main.py run"
-          # --- NUOVA SOLUZIONE ---
-          # Aumentiamo la memoria richiesta dalla funzione a 2GB (2048 MB).
-          # Puoi sperimentare con questo valore (es. 4096 per 4GB).
-          memory: 2048
