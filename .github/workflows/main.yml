@@ -11,18 +11,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4.1.7
 
-      # --- SOLUZIONE DEFINITIVA ---
-      # 1. Copiamo il file dal nostro repository alla cartella 'home' del runner,
-      #    dove l'azione di Speckle si aspetta di trovarlo.
-      - name: Copy schema file to HOME directory
-        run: cp ${{ github.workspace }}/functionSchema.json /home/runner/functionSchema.json
-
       - name: Speckle Automate Function - Build and Publish
         uses: specklesystems/speckle-automate-github-composite-action@0.8.1
         with:
           speckle_automate_url: ${{ env.SPECKLE_AUTOMATE_URL || vars.SPECKLE_AUTOMATE_URL || 'https://automate.speckle.dev' }}
           speckle_token: ${{ secrets.SPECKLE_FUNCTION_TOKEN }}
           speckle_function_id: ${{ secrets.SPECKLE_FUNCTION_ID }}
-          # 2. Passiamo il percorso RELATIVO alla home del runner.
-          speckle_function_input_schema_file_path: "functionSchema.json"
+          speckle_function_input_schema_file_path: "${{ github.workspace }}/functionSchema.json"
           speckle_function_command: "python -u main.py run"
+          # --- NUOVA SOLUZIONE ---
+          # Aumentiamo la memoria richiesta dalla funzione a 2GB (2048 MB).
+          # Puoi sperimentare con questo valore (es. 4096 per 4GB).
+          memory: 2048
