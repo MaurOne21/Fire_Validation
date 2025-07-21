@@ -10,17 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.1.7
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install dependencies
-        run: |
-          pip install .[dev]
-      
-      # --- SOLUZIONE DEFINITIVA ---
-      # Creiamo un file JSON fittizio in un percorso fisso che l'azione si aspetta.
-      - name: Create dummy schema file
-        run: echo "{}" > /home/runner/functionSchema.json
+
+      # NOTA: Non servono più passaggi per creare file fittizi.
+      # L'azione troverà il file 'functionSchema.json' che abbiamo committato.
 
       - name: Speckle Automate Function - Build and Publish
         uses: specklesystems/speckle-automate-github-composite-action@0.8.1
@@ -28,6 +20,5 @@ jobs:
           speckle_automate_url: ${{ env.SPECKLE_AUTOMATE_URL || vars.SPECKLE_AUTOMATE_URL || 'https://automate.speckle.dev' }}
           speckle_token: ${{ secrets.SPECKLE_FUNCTION_TOKEN }}
           speckle_function_id: ${{ secrets.SPECKLE_FUNCTION_ID }}
-          # Passiamo il percorso fisso del nostro file fittizio.
-          speckle_function_input_schema_file_path: "/home/runner/functionSchema.json"
+          speckle_function_input_schema_file_path: "functionSchema.json"
           speckle_function_command: "python -u main.py run"
