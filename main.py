@@ -14,3 +14,4 @@ def main(ctx: AutomationContext) -> None:
     ctx.mark_run_succeeded("Test di logging con requirements.txt completato.")
 
     print("--- TEST SEMPLIFICATO TERMINATO ---", flush=True)
+
