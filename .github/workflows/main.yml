@@ -6,9 +6,7 @@ on:
       - "*"
 
 jobs:
-  publish-automate-function-version: # make sure the action works on a clean machine without building
-    env:
-      FUNCTION_SCHEMA_FILE_NAME: functionSchema.json
+  publish-automate-function-version:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.1.7
@@ -18,18 +16,12 @@ jobs:
       - name: Install dependencies
         run: |
           pip install .[dev]
-      - name: Extract functionInputSchema
-        id: extract_schema
-        run: |
-          python main.py generate_schema ${HOME}/${{ env.FUNCTION_SCHEMA_FILE_NAME }}
+      # NOTA: Il passaggio "Extract functionInputSchema" è stato rimosso.
       - name: Speckle Automate Function - Build and Publish
         uses: specklesystems/speckle-automate-github-composite-action@0.8.1
         with:
           speckle_automate_url: ${{ env.SPECKLE_AUTOMATE_URL || vars.SPECKLE_AUTOMATE_URL || 'https://automate.speckle.dev' }}
           speckle_token: ${{ secrets.SPECKLE_FUNCTION_TOKEN }}
           speckle_function_id: ${{ secrets.SPECKLE_FUNCTION_ID }}
-          # --- QUESTA È LA RIGA MODIFICATA ---
-          # Invece di cercare un file, passiamo una stringa vuota per dire all'azione
-          # che il nostro script non ha bisogno di un file di schema.
-          speckle_function_input_schema_file_path: ""
+          # NOTA: Il parametro 'speckle_function_input_schema_file_path' è stato rimosso.
           speckle_function_command: "python -u main.py run"
