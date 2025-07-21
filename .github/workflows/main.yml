@@ -17,14 +17,19 @@ jobs:
       # 1. Fa il checkout del tuo codice, inclusi main.py e functionSchema.json
       - uses: actions/checkout@v4.1.7
 
-      # 2. Esegue l'azione di Speckle
+      # --- SOLUZIONE DEFINITIVA ---
+      # 2. Copiamo il file dal nostro repository alla cartella 'home' del runner,
+      #    dove l'azione di Speckle si aspetta di trovarlo.
+      - name: Copy schema file to HOME directory
+        run: cp ${{ github.workspace }}/functionSchema.json /home/runner/functionSchema.json
+
+      # 3. Esegue l'azione di Speckle
       - name: Speckle Automate Function - Build and Publish
         uses: specklesystems/speckle-automate-github-composite-action@0.8.1
         with:
           speckle_automate_url: ${{ env.SPECKLE_AUTOMATE_URL || vars.SPECKLE_AUTOMATE_URL || 'https://automate.speckle.dev' }}
           speckle_token: ${{ secrets.SPECKLE_FUNCTION_TOKEN }}
           speckle_function_id: ${{ secrets.SPECKLE_FUNCTION_ID }}
-          # Passiamo un percorso relativo al file che si trova nella root del progetto.
-          # Questa è la sintassi standard che dovrebbe funzionare.
-          speckle_function_input_schema_file_path: "functionSchema.json"
+          # Passiamo il percorso assoluto che ora sappiamo esisterà.
+          speckle_function_input_schema_file_path: "/home/runner/functionSchema.json"
           speckle_function_command: "python -u main.py run"
