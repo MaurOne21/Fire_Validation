@@ -1,7 +1,8 @@
 # main.py
 # Versione corretta con il metodo aggiornato per ottenere i dati del commit.
+# AGGIORNAMENTO: Rinominata la funzione 'execute_automation' in 'execute_automate_function'
 
-from speckle_automate import AutomationContext, execute_automation
+from speckle_automate import AutomationContext, execute_automate_function
 
 def main(ctx: AutomationContext) -> None:
     """
@@ -11,7 +12,6 @@ def main(ctx: AutomationContext) -> None:
     print("--- AVVIO SCRIPT DI ISPEZIONE DATI (v. corretta) ---", flush=True)
     
     try:
-        # --- CORREZIONE APPLICATA QUI ---
         # Il metodo 'get_commit_root' è stato sostituito da 'get_commit_data'
         # nelle nuove versioni della libreria di Speckle.
         commit_root_object = ctx.get_commit_data()
@@ -70,4 +70,4 @@ def main(ctx: AutomationContext) -> None:
     print("--- FINE SCRIPT DI ISPEZIONE DATI ---", flush=True)
 
 if __name__ == "__main__":
-    execute_automation(main)
+    execute_automate_function(main)
