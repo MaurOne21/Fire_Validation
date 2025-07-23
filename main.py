@@ -1,6 +1,6 @@
 # main.py
 # Versione corretta con il metodo aggiornato per ottenere i dati del commit.
-# AGGIORNAMENTO: Rinominata la funzione 'execute_automation' in 'execute_automate_function'
+# AGGIORNAMENTO FINALE: Usiamo 'get_version_root_object' come da documentazione ufficiale.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -12,16 +12,16 @@ def main(ctx: AutomationContext) -> None:
     print("--- AVVIO SCRIPT DI ISPEZIONE DATI (v. corretta) ---", flush=True)
     
     try:
-        # Il metodo 'get_commit_root' è stato sostituito da 'get_commit_data'
-        # nelle nuove versioni della libreria di Speckle.
-        commit_root_object = ctx.get_commit_data()
+        # --- CORREZIONE DEFINITIVA APPLICATA QUI ---
+        # Il metodo corretto e attuale per ottenere i dati è 'get_version_root_object'.
+        version_root_object = ctx.get_version_root_object()
         
-        print(f"Oggetto radice ricevuto. Tipo: {getattr(commit_root_object, 'speckle_type', 'N/A')}", flush=True)
+        print(f"Oggetto radice ricevuto. Tipo: {getattr(version_root_object, 'speckle_type', 'N/A')}", flush=True)
 
         # I dati da Revit sono spesso in una lista chiamata 'elements' o '@elements'.
-        elements = getattr(commit_root_object, 'elements', None)
+        elements = getattr(version_root_object, 'elements', None)
         if not elements:
-             elements = getattr(commit_root_object, '@elements', None) # Prova anche con la @
+             elements = getattr(version_root_object, '@elements', None) # Prova anche con la @
         
         if not elements:
             print("ERRORE: Non è stata trovata una lista 'elements' o '@elements' nell'oggetto radice.", flush=True)
