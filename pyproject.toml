@@ -1,4 +1,4 @@
 [project]
 name = "speckle-automate-function"
 version = "0.1.0"
-dependencies = []
+dependencies = ["specklepy==3.0.0"]

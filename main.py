@@ -2,7 +2,7 @@
 # Versione definitiva corretta secondo le indicazioni del team di Speckle.
 # Reintroduce il wrapper 'execute_automation' per un'esecuzione corretta.
 
-from speckle_automate import AutomationContext, execute_automation
+from speckle_automate import AutomationContext, execute_automate_function
 
 def main(ctx: AutomationContext) -> None:
     """
@@ -71,4 +71,4 @@ def main(ctx: AutomationContext) -> None:
 # Assicura che la nostra funzione 'main' venga eseguita correttamente
 # all'interno dell'ambiente di Speckle.
 if __name__ == "__main__":
-    execute_automation(main)
+    execute_automate_function(main)
