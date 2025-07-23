@@ -1,8 +1,7 @@
 # main.py
-# Versione definitiva corretta secondo le indicazioni del team di Speckle.
-# Reintroduce il wrapper 'execute_automation' per un'esecuzione corretta.
+# Versione corretta con il metodo aggiornato per ottenere i dati del commit.
 
-from speckle_automate import AutomationContext, execute_automate_function
+from speckle_automate import AutomationContext, execute_automation
 
 def main(ctx: AutomationContext) -> None:
     """
@@ -12,11 +11,14 @@ def main(ctx: AutomationContext) -> None:
     print("--- AVVIO SCRIPT DI ISPEZIONE DATI (v. corretta) ---", flush=True)
     
     try:
-        # 1. Otteniamo il modello dal commit.
-        commit_root_object = ctx.get_commit_root()
+        # --- CORREZIONE APPLICATA QUI ---
+        # Il metodo 'get_commit_root' è stato sostituito da 'get_commit_data'
+        # nelle nuove versioni della libreria di Speckle.
+        commit_root_object = ctx.get_commit_data()
+        
         print(f"Oggetto radice ricevuto. Tipo: {getattr(commit_root_object, 'speckle_type', 'N/A')}", flush=True)
 
-        # 2. I dati da Revit sono spesso in una lista chiamata '@elements'.
+        # I dati da Revit sono spesso in una lista chiamata 'elements' o '@elements'.
         elements = getattr(commit_root_object, 'elements', None)
         if not elements:
              elements = getattr(commit_root_object, '@elements', None) # Prova anche con la @
@@ -32,7 +34,7 @@ def main(ctx: AutomationContext) -> None:
             ctx.mark_run_succeeded("Il commit è vuoto.")
             return
 
-        # 3. Prendiamo il primo elemento della lista e lo ispezioniamo.
+        # Prendiamo il primo elemento della lista e lo ispezioniamo.
         first_element = elements[0]
         print("\n--- ISPEZIONE DEL PRIMO ELEMENTO TROVATO ---", flush=True)
         print(f"ID Oggetto: {getattr(first_element, 'id', 'N/A')}", flush=True)
@@ -42,7 +44,7 @@ def main(ctx: AutomationContext) -> None:
         for prop_name in first_element.get_member_names():
             print(f"  - {prop_name}", flush=True)
 
-        # 4. Cerchiamo i parametri, che in Revit sono spesso annidati.
+        # Cerchiamo i parametri, che in Revit sono spesso annidati.
         parameters = getattr(first_element, 'parameters', None)
         if parameters:
             print("\n--- ISPEZIONE DEI PARAMETRI NESTATI ---", flush=True)
@@ -67,8 +69,5 @@ def main(ctx: AutomationContext) -> None:
 
     print("--- FINE SCRIPT DI ISPEZIONE DATI ---", flush=True)
 
-# Questa è la parte fondamentale che mancava, suggerita dal team di Speckle.
-# Assicura che la nostra funzione 'main' venga eseguita correttamente
-# all'interno dell'ambiente di Speckle.
 if __name__ == "__main__":
-    execute_automate_function(main)
+    execute_automation(main)
