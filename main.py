@@ -50,11 +50,26 @@ def main(ctx: AutomationContext) -> None:
             # Se l'elemento è un DataObject, proviamo a guardare dentro.
             if speckle_type == "Objects.Data.DataObject":
                 print("    -> È un DataObject, ispeziono il suo contenuto:", flush=True)
-                # I dati reali sono spesso in una proprietà dinamica con un nome strano.
+                # I dati reali sono spesso in una proprietà dinamica.
                 # Iteriamo su tutte le proprietà per trovarli.
                 for prop_name in el.get_member_names():
                     inner_value = getattr(el, prop_name)
                     if isinstance(inner_value, list):
                         for inner_item in inner_value:
                             if hasattr(inner_item, "speckle_type"):
-                                print(f"      - Oggetto Interno: {getattr(inner_item, '
+                                print(f"      - Oggetto Interno: {getattr(inner_item, 'speckle_type', 'N/A')}", flush=True)
+                    elif hasattr(inner_value, "speckle_type"):
+                         print(f"      - Oggetto Interno: {getattr(inner_value, 'speckle_type', 'N/A')}", flush=True)
+
+
+        ctx.mark_run_success("Ispezione dei tipi completata. Controllare i log.")
+
+    except Exception as e:
+        error_message = f"Errore durante l'esecuzione dello script: {e}"
+        print(error_message, flush=True)
+        ctx.mark_run_failed(error_message)
+
+    print("--- FINE ISPEZIONE FINALE ---", flush=True)
+
+if __name__ == "__main__":
+    execute_automate_function(main)
