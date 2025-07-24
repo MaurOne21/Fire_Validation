@@ -12,7 +12,7 @@ PARAMETER_GROUP = "Testo"
 
 # --- Regola #2 ---
 # NOTA: Sostituisci questo con l'ID reale del tuo stream strutturale!
-STRUCTURAL_STREAM_ID = "0894f1e096" 
+STRUCTURAL_STREAM_ID = "d48a1d3b3c" 
 # NOTA: Questo deve corrispondere al nome del parametro in Revit
 PHASE_DEMOLISHED_PARAM = "Fase di demolizione"
 # Categorie strutturali da considerare portanti
@@ -84,10 +84,9 @@ def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
     
     # 1. Otteniamo il modello strutturale più recente.
     try:
-        structural_commit = ctx.speckle_client.branch.get(
-            ctx.automation_run_data.project_id, STRUCTURAL_STREAM_ID, "main"
-        ).commits.items[0]
-        structural_root_object = ctx.receive_version(structural_commit.id)
+        # --- SOLUZIONE APPLICATA QUI ---
+        # Usiamo il metodo corretto 'ctx.get_model' per caricare un altro stream.
+        structural_root_object = ctx.get_model(STRUCTURAL_STREAM_ID, "main")
         structural_elements = find_all_elements(structural_root_object)
         print(f"Successfully loaded {len(structural_elements)} elements from the structural model.", flush=True)
     except Exception as e:
