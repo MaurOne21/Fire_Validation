@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Aggiunto logging per il tipo di oggetto per il debug finale.
+# Utilizza una ricerca ricorsiva per trovare in modo affidabile tutti gli elementi.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -8,6 +8,30 @@ from speckle_automate import AutomationContext, execute_automate_function
 TARGET_TYPES = ["Wall", "Floor"]
 # Definiamo il nome esatto del parametro che cercheremo.
 FIRE_RATING_PARAM = "FireRating"
+
+
+def find_all_elements(base_object) -> list:
+    """
+    Cerca ricorsivamente in un oggetto Speckle tutti gli elementi,
+    indipendentemente da quanto sono annidati in liste o collezioni.
+    """
+    all_elements = []
+
+    # Se l'oggetto ha una proprietà 'elements' o '@elements', esplorala.
+    elements_property = getattr(base_object, 'elements', None)
+    if not elements_property:
+        elements_property = getattr(base_object, '@elements', None)
+
+    if elements_property and isinstance(elements_property, list):
+        for element in elements_property:
+            all_elements.extend(find_all_elements(element))
+    
+    # Se l'oggetto stesso non è una collezione, aggiungilo alla lista.
+    # Questo cattura gli elementi finali (muri, solai, etc.).
+    elif "Collection" not in getattr(base_object, "speckle_type", ""):
+        all_elements.append(base_object)
+        
+    return all_elements
 
 
 def main(ctx: AutomationContext) -> None:
@@ -20,26 +44,8 @@ def main(ctx: AutomationContext) -> None:
     try:
         commit_root_object = ctx.receive_version()
         
-        # --- NUOVO METODO DI RICERCA ELEMENTI ---
-        # I commit da Revit hanno una struttura annidata. Scaviamo per trovare gli elementi.
-        all_elements = []
-        
-        # Il primo livello di solito ha una proprietà 'elements' o '@elements'.
-        top_level_elements = getattr(commit_root_object, 'elements', None)
-        if not top_level_elements:
-            top_level_elements = getattr(commit_root_object, '@elements', [])
-
-        # Iteriamo attraverso le collezioni di categorie (es. "Muri", "Solai")
-        for category_collection in top_level_elements:
-            # Ogni collezione di categoria ha a sua volta una lista 'elements'.
-            elements_in_category = getattr(category_collection, 'elements', None)
-            if not elements_in_category:
-                elements_in_category = getattr(category_collection, '@elements', [])
-            
-            if elements_in_category:
-                all_elements.extend(elements_in_category)
-        
-        # --- FINE NUOVO METODO ---
+        # Usiamo la nuova funzione ricorsiva per trovare TUTTI gli elementi.
+        all_elements = find_all_elements(commit_root_object)
 
         if not all_elements:
             ctx.mark_run_success("Nessun elemento Revit trovato nel commit.")
@@ -51,8 +57,6 @@ def main(ctx: AutomationContext) -> None:
         objects_validated = 0
         for el in all_elements:
             speckle_type = getattr(el, 'speckle_type', '')
-            # Aggiungiamo un print per vedere il tipo esatto di ogni oggetto.
-            print(f"Analizzando elemento ID {el.id} con tipo: {speckle_type}", flush=True)
             
             # Controlliamo solo i tipi che ci interessano (Muri e Solai)
             if any(target.lower() in speckle_type.lower() for target in TARGET_TYPES):
