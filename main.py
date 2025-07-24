@@ -1,11 +1,11 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Lo script ora è in grado di navigare la struttura dati annidata di Revit.
+# Corretto il metodo di identificazione del tipo di oggetto.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
-# Definiamo i tipi di oggetti che vogliamo controllare.
-TARGET_TYPES = ["Objects.BuiltElements.Wall:Objects.BuiltElements.Revit.RevitWall", "Objects.BuiltElements.Floor:Objects.BuiltElements.Revit.RevitFloor"]
+# Definiamo i tipi di oggetti che vogliamo controllare in modo più robusto.
+TARGET_TYPES = ["Wall", "Floor"]
 # Definiamo il nome esatto del parametro che cercheremo.
 FIRE_RATING_PARAM = "FireRating"
 
@@ -17,13 +17,11 @@ def find_revit_elements_in_commit(commit_root_object) -> list:
     """
     print("Inizio ricerca elementi Revit nel commit...", flush=True)
     
-    # Controlla se l'oggetto radice ha una lista 'elements'.
     if hasattr(commit_root_object, "elements"):
-        # Itera attraverso le collezioni annidate (es. Categorie di Revit)
         for category_collection in commit_root_object.elements:
             if hasattr(category_collection, "elements"):
                 print(f"Trovata categoria: {getattr(category_collection, 'name', 'N/A')}", flush=True)
-                return category_collection.elements # Restituisce la prima lista di elementi trovata
+                return category_collection.elements
     
     print("ATTENZIONE: Nessuna lista di elementi trovata nella struttura attesa.", flush=True)
     return []
@@ -38,23 +36,25 @@ def main(ctx: AutomationContext) -> None:
     
     try:
         commit_root_object = ctx.receive_version()
-        
-        # Usiamo la nuova funzione per trovare la lista corretta di elementi.
         elements_to_check = find_revit_elements_in_commit(commit_root_object)
 
         if not elements_to_check:
             ctx.mark_run_success("Nessun elemento Revit trovato nel commit.")
             return
 
-        print(f"Trovati {len(elements_to_check)} elementi da analizzare.", flush=True)
+        print(f"Trovati {len(elements_to_check)} elementi totali da analizzare.", flush=True)
 
         validation_errors = []
+        objects_validated = 0
         for el in elements_to_check:
-            # Controlliamo solo i tipi che ci interessano (Muri e Solai)
             speckle_type = getattr(el, 'speckle_type', '')
+            print(f"Analizzando elemento ID {el.id} con tipo: {speckle_type}", flush=True)
+
+            # Controlliamo solo i tipi che ci interessano (Muri e Solai)
             if any(target in speckle_type for target in TARGET_TYPES):
+                objects_validated += 1
+                print(f"-> Elemento {el.id} identificato come target. Procedo con la validazione.", flush=True)
                 
-                # I parametri di istanza sono spesso in un sotto-oggetto 'parameters'
                 parameters = getattr(el, 'parameters', None)
                 if not parameters:
                     print(f"ERRORE: L'elemento {el.id} non ha un oggetto 'parameters'.", flush=True)
@@ -63,10 +63,11 @@ def main(ctx: AutomationContext) -> None:
 
                 fire_rating_param = parameters.get(FIRE_RATING_PARAM)
                 
-                # Il parametro stesso è un oggetto, il valore è in 'value'
                 if not fire_rating_param or not getattr(fire_rating_param, 'value', None):
                     print(f"ERRORE: L'elemento {el.id} non ha un '{FIRE_RATING_PARAM}' valido.", flush=True)
                     validation_errors.append(el.id)
+
+        print(f"Validazione completata. {objects_validated} oggetti sono stati controllati.", flush=True)
 
         if validation_errors:
             error_message = f"Validazione fallita: {len(validation_errors)} elementi non hanno il parametro '{FIRE_RATING_PARAM}' compilato."
@@ -74,17 +75,4 @@ def main(ctx: AutomationContext) -> None:
                 category=f"Dati Mancanti: {FIRE_RATING_PARAM}",
                 object_ids=validation_errors,
                 message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante o vuoto.",
-            )
-            ctx.mark_run_failed(error_message)
-        else:
-            ctx.mark_run_success("Validazione superata: Tutti i muri e solai hanno il parametro 'FireRating' compilato.")
-
-    except Exception as e:
-        error_message = f"Errore durante l'esecuzione dello script: {e}"
-        print(error_message, flush=True)
-        ctx.mark_run_failed(error_message)
-
-    print("--- FINE REGOLA #1 ---", flush=True)
-
-if __name__ == "__main__":
-    execute_automate_function(main)
+          
