@@ -1,5 +1,6 @@
 # main.py
 # Script di ispezione finale per scoprire il 'speckle_type' esatto degli elementi.
+# AGGIORNAMENTO: Aggiunta la logica per ispezionare dentro gli 'Objects.Data.DataObject'.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -43,16 +44,17 @@ def main(ctx: AutomationContext) -> None:
         # Iteriamo su ogni elemento e stampiamo il suo tipo.
         for i, el in enumerate(all_elements):
             speckle_type = getattr(el, 'speckle_type', 'TIPO NON TROVATO')
-            print(f"  - Elemento #{i+1}: {speckle_type}", flush=True)
+            print(f"  - Elemento Contenitore #{i+1}: {speckle_type}", flush=True)
 
-        ctx.mark_run_success("Ispezione dei tipi completata. Controllare i log.")
-
-    except Exception as e:
-        error_message = f"Errore durante l'esecuzione dello script: {e}"
-        print(error_message, flush=True)
-        ctx.mark_run_failed(error_message)
-
-    print("--- FINE ISPEZIONE FINALE ---", flush=True)
-
-if __name__ == "__main__":
-    execute_automate_function(main)
+            # --- NUOVA LOGICA DI ISPEZIONE ---
+            # Se l'elemento è un DataObject, proviamo a guardare dentro.
+            if speckle_type == "Objects.Data.DataObject":
+                print("    -> È un DataObject, ispeziono il suo contenuto:", flush=True)
+                # I dati reali sono spesso in una proprietà dinamica con un nome strano.
+                # Iteriamo su tutte le proprietà per trovarli.
+                for prop_name in el.get_member_names():
+                    inner_value = getattr(el, prop_name)
+                    if isinstance(inner_value, list):
+                        for inner_item in inner_value:
+                            if hasattr(inner_item, "speckle_type"):
+                                print(f"      - Oggetto Interno: {getattr(inner_item, '
