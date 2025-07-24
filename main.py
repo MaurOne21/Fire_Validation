@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Utilizza la struttura dati e i nomi dei parametri corretti scoperti tramite il debug.
+# Semplificato per isolare il problema di visualizzazione.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -81,12 +81,7 @@ def main(ctx: AutomationContext) -> None:
         if validation_errors:
             error_message = f"Validation failed: {len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
             
-            error_ids = [e.id for e in validation_errors]
-
-            # Creiamo il filtro di visualizzazione persistente
-            ctx.set_context_view(resource_ids=error_ids)
-            
-            # Alleghiamo l'errore con la colorazione
+            # Alleghiamo l'errore con la colorazione.
             ctx.attach_error_to_objects(
                 category=f"Missing Data: {FIRE_RATING_PARAM}",
                 affected_objects=validation_errors,
