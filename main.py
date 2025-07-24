@@ -109,7 +109,9 @@ def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
             "branch_name": STRUCTURAL_BRANCH_NAME,
         }
         
-        response = ctx.speckle_client.execute_query(query=query, variables=variables)
+        # --- SOLUZIONE APPLICATA QUI ---
+        # Il nome corretto dell'argomento è 'variable_values'.
+        response = ctx.speckle_client.execute_query(query=query, variable_values=variables)
         latest_commit_id = response["project"]["model"]["branch"]["commits"]["items"][0]["id"]
         
         structural_root_object = ctx.receive_version(latest_commit_id)
@@ -177,8 +179,6 @@ def main(ctx: AutomationContext) -> None:
 
         all_errors = []
         all_errors.extend(run_fire_rating_check(all_elements, ctx))
-        # --- CORREZIONE APPLICATA QUI ---
-        # Chiamiamo la funzione corretta 'run_demolition_check'.
         all_errors.extend(run_demolition_check(all_elements, ctx))
         
         if all_errors:
