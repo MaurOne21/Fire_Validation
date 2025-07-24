@@ -86,7 +86,6 @@ def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
     
     # 1. Otteniamo il modello strutturale più recente.
     try:
-        # --- SOLUZIONE APPLICATA QUI ---
         # Costruiamo una query GraphQL per ottenere l'ID dell'ultimo commit
         # del branch specificato nel modello strutturale.
         query = """
@@ -178,7 +177,9 @@ def main(ctx: AutomationContext) -> None:
 
         all_errors = []
         all_errors.extend(run_fire_rating_check(all_elements, ctx))
-        all_errors.extend(run_demolition_check_diagnostic(all_elements, ctx))
+        # --- CORREZIONE APPLICATA QUI ---
+        # Chiamiamo la funzione corretta 'run_demolition_check'.
+        all_errors.extend(run_demolition_check(all_elements, ctx))
         
         if all_errors:
             ctx.mark_run_failed(f"Validation failed with a total of {len(all_errors)} errors.")
