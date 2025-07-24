@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# L'override visivo è stato riattivato per colorare gli oggetti con errori.
+# Aggiunto un Filtro di Visualizzazione per colorare gli oggetti in modo persistente.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -36,17 +36,17 @@ def main(ctx: AutomationContext) -> None:
     Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
     il parametro 'FireRating' compilato.
     """
-    print("--- AVVIO REGOLA #1: CENSIMENTO ANTINCENDIO ---", flush=True)
+    print("--- STARTING RULE #1: FIRE RATING CENSUS ---", flush=True)
     
     try:
         commit_root_object = ctx.receive_version()
         all_elements = find_all_elements(commit_root_object)
 
         if not all_elements:
-            ctx.mark_run_success("Nessun elemento Revit trovato nel commit.")
+            ctx.mark_run_success("No Revit elements found in the commit.")
             return
 
-        print(f"Trovati {len(all_elements)} elementi totali da analizzare.", flush=True)
+        print(f"Found {len(all_elements)} total elements to analyze.", flush=True)
 
         validation_errors = []
         objects_validated = 0
@@ -55,57 +55,63 @@ def main(ctx: AutomationContext) -> None:
             
             if any(target.lower() in category.lower() for target in TARGET_CATEGORIES):
                 objects_validated += 1
-                print(f"-> Elemento {el.id} (Categoria: {category}) identificato come target. Procedo con la validazione.", flush=True)
                 
                 properties = getattr(el, 'properties', None)
                 if not properties:
-                    print(f"ERRORE: L'elemento {el.id} non ha 'properties'.", flush=True)
-                    validation_errors.append(el) # Aggiungiamo l'oggetto intero
+                    validation_errors.append(el)
                     continue
 
                 revit_parameters = properties.get('Parameters', {})
                 if not revit_parameters:
-                    print(f"ERRORE: L'elemento {el.id} non ha un oggetto 'Parameters' dentro 'properties'.", flush=True)
-                    validation_errors.append(el) # Aggiungiamo l'oggetto intero
+                    validation_errors.append(el)
                     continue
 
                 instance_params = revit_parameters.get('Instance Parameters', {})
                 if not instance_params:
-                    print(f"ERRORE: L'elemento {el.id} non ha 'Instance Parameters'.", flush=True)
-                    validation_errors.append(el) # Aggiungiamo l'oggetto intero
+                    validation_errors.append(el)
                     continue
 
                 fire_rating_param = instance_params.get(FIRE_RATING_PARAM)
                 
                 if not fire_rating_param or getattr(fire_rating_param, 'value', None) is None:
-                    print(f"ERRORE: L'elemento {el.id} non ha un '{FIRE_RATING_PARAM}' valido.", flush=True)
-                    validation_errors.append(el) # Aggiungiamo l'oggetto intero
+                    validation_errors.append(el)
 
-        print(f"Validazione completata. {objects_validated} oggetti sono stati controllati.", flush=True)
+        print(f"Validation complete. {objects_validated} objects were checked.", flush=True)
 
         if validation_errors:
-            error_message = f"Validazione fallita: {len(validation_errors)} elementi non hanno il parametro '{FIRE_RATING_PARAM}' compilato."
+            error_message = f"Validation failed: {len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
             
-            # Riattiviamo l'override visivo per colorare gli oggetti di rosso.
+            # --- SOLUZIONE VISIVA PERSISTENTE ---
+            # 1. Estraiamo gli ID degli oggetti con errori.
+            error_ids = [e.id for e in validation_errors]
+
+            # 2. Creiamo un filtro di visualizzazione che isola e colora gli oggetti.
+            ctx.set_context_view(
+                view_options={
+                    "all": {"visible": False, "ghosted": True}, # Nasconde e rende "fantasma" tutto il resto
+                    "object_ids": {"visible": True, "color": "red", "ghosted": False}, # Mostra e colora di rosso gli errori
+                },
+                object_ids=error_ids,
+            )
+            
             ctx.attach_error_to_objects(
-                category=f"Dati Mancanti: {FIRE_RATING_PARAM}",
+                category=f"Missing Data: {FIRE_RATING_PARAM}",
                 affected_objects=validation_errors,
-                message=f"Il parametro '{FIRE_RATING_PARAM}' e mancante o vuoto.",
-                visual_overrides={"color": "red"}
+                message=f"The parameter '{FIRE_RATING_PARAM}' is missing or empty.",
             )
             ctx.mark_run_failed(error_message)
         else:
             if objects_validated > 0:
-                ctx.mark_run_success("Validazione superata: Tutti i muri e solai controllati hanno il parametro 'FireRating' compilato.")
+                ctx.mark_run_success("Validation passed: All checked Walls and Floors have the 'FireRating' parameter.")
             else:
-                ctx.mark_run_success("Validazione completata: Nessun muro o solaio trovato nel commit da validare.")
+                ctx.mark_run_success("Validation complete: No Walls or Floors were found in the commit to validate.")
 
     except Exception as e:
-        error_message = f"Errore durante l'esecuzione dello script: {e}"
+        error_message = f"An error occurred during the script execution: {e}"
         print(error_message, flush=True)
         ctx.mark_run_failed(error_message)
 
-    print("--- FINE REGOLA #1 ---", flush=True)
+    print("--- END OF RULE #1 ---", flush=True)
 
 if __name__ == "__main__":
     execute_automate_function(main)
