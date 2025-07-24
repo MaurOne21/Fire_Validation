@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Utilizza un accesso sicuro ai parametri per gestire i valori mancanti.
+# Utilizza la struttura dati e i nomi dei parametri corretti scoperti tramite il debug.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -8,6 +8,8 @@ from speckle_automate import AutomationContext, execute_automate_function
 TARGET_CATEGORIES = ["Muri", "Pavimenti"]
 # Definiamo il nome esatto del parametro che cercheremo.
 FIRE_RATING_PARAM = "Fire_Rating"
+# Definiamo il gruppo in cui si trova il parametro.
+PARAMETER_GROUP = "Testo"
 
 
 def find_all_elements(base_object) -> list:
@@ -52,19 +54,20 @@ def main(ctx: AutomationContext) -> None:
             if any(target.lower() in category.lower() for target in TARGET_CATEGORIES):
                 objects_validated += 1
                 
-                # --- SOLUZIONE FINALE APPLICATA QUI ---
-                # Usiamo un accesso sicuro (.get()) a ogni livello per evitare errori
-                # se una delle "scatole" non esiste.
-                properties = getattr(el, 'properties', {})
-                revit_parameters = properties.get('Parameters', {})
-                instance_params = revit_parameters.get('Instance Parameters', {})
-                
-                # Cerchiamo il parametro in modo sicuro. Se non c'è, 'fire_rating_param' sarà None.
-                fire_rating_param = instance_params.get(FIRE_RATING_PARAM)
-                
-                # Il parametro è invalido se non esiste (None) o se esiste ma il suo valore è vuoto.
-                if not fire_rating_param or getattr(fire_rating_param, 'value', None) is None:
-                    print(f"ERROR: Element {el.id} does not have a valid '{FIRE_RATING_PARAM}'.", flush=True)
+                try:
+                    # Seguiamo il percorso esatto che abbiamo scoperto.
+                    properties = getattr(el, 'properties')
+                    revit_parameters = properties['Parameters']
+                    instance_params = revit_parameters['Instance Parameters']
+                    text_group = instance_params[PARAMETER_GROUP]
+                    fire_rating_param = text_group[FIRE_RATING_PARAM]
+                    
+                    value = getattr(fire_rating_param, 'value', None)
+                    if value is None or not str(value).strip():
+                        raise ValueError("Parameter value is missing or empty.")
+
+                except (AttributeError, KeyError, ValueError) as e:
+                    print(f"ERROR: Element {el.id} failed validation. Reason: {e}", flush=True)
                     validation_errors.append(el)
 
         print(f"Validation complete. {objects_validated} objects were checked.", flush=True)
