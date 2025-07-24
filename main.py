@@ -86,8 +86,7 @@ def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
     
     # 1. Otteniamo il modello strutturale più recente.
     try:
-        # --- SOLUZIONE APPLICATA QUI ---
-        # La query GraphQL deve iniziare con "query" senza spazi o newline prima.
+        # La query GraphQL per ottenere l'ID dell'ultimo commit
         query = f"""query GetLatestCommit {{
   project(id: "{ctx.automation_run_data.project_id}") {{
     model(id: "{STRUCTURAL_STREAM_ID}") {{
@@ -102,7 +101,9 @@ def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
   }}
 }}"""
         
-        response = ctx.speckle_client.execute_query(query=query)
+        # --- SOLUZIONE APPLICATA QUI ---
+        # Usiamo .strip() per rimuovere ogni spazio o newline extra prima di inviare la query.
+        response = ctx.speckle_client.execute_query(query=query.strip())
         latest_commit_id = response["data"]["project"]["model"]["branch"]["commits"]["items"][0]["id"]
         
         structural_root_object = ctx.receive_version(latest_commit_id)
