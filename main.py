@@ -13,6 +13,8 @@ PARAMETER_GROUP = "Testo"
 # --- Regola #2 ---
 # NOTA: Sostituisci questo con l'ID reale del tuo stream strutturale!
 STRUCTURAL_STREAM_ID = "d48a1d3b3c" 
+# NOTA: Assicurati che questo sia il nome del branch del tuo modello strutturale.
+STRUCTURAL_BRANCH_NAME = "main"
 # NOTA: Questo deve corrispondere al nome del parametro in Revit
 PHASE_DEMOLISHED_PARAM = "Fase di demolizione"
 # Categorie strutturali da considerare portanti
@@ -85,9 +87,8 @@ def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
     # 1. Otteniamo il modello strutturale più recente.
     try:
         # --- SOLUZIONE APPLICATA QUI ---
-        # La funzione get_model prende solo l'ID del modello.
-        # Di default, carica l'ultima versione del branch principale ("main").
-        structural_root_object = ctx.get_model(STRUCTURAL_STREAM_ID)
+        # Usiamo il metodo corretto 'ctx.get_model' specificando anche il nome del branch.
+        structural_root_object = ctx.get_model(STRUCTURAL_STREAM_ID, STRUCTURAL_BRANCH_NAME)
         structural_elements = find_all_elements(structural_root_object)
         print(f"Successfully loaded {len(structural_elements)} elements from the structural model.", flush=True)
     except Exception as e:
