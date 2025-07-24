@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# L'override visivo è stato temporaneamente rimosso per isolare il problema.
+# L'override visivo è stato riattivato per colorare gli oggetti con errori.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -86,11 +86,12 @@ def main(ctx: AutomationContext) -> None:
         if validation_errors:
             error_message = f"Validazione fallita: {len(validation_errors)} elementi non hanno il parametro '{FIRE_RATING_PARAM}' compilato."
             
-            # L'override visivo è stato temporaneamente rimosso per il debug.
+            # Riattiviamo l'override visivo per colorare gli oggetti di rosso.
             ctx.attach_error_to_objects(
                 category=f"Dati Mancanti: {FIRE_RATING_PARAM}",
                 affected_objects=validation_errors,
-                message=f"Il parametro '{FIRE_RATING_PARAM}' e mancante o vuoto."
+                message=f"Il parametro '{FIRE_RATING_PARAM}' e mancante o vuoto.",
+                visual_overrides={"color": "red"}
             )
             ctx.mark_run_failed(error_message)
         else:
