@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Lo script ora legge la struttura corretta: Parameters -> Instance Parameters.
+# Lo script ora legge la struttura corretta: properties -> Parameters -> Instance Parameters.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -58,21 +58,28 @@ def main(ctx: AutomationContext) -> None:
                 print(f"-> Elemento {el.id} (Categoria: {category}) identificato come target. Procedo con la validazione.", flush=True)
                 
                 # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
-                # 1. Accediamo all'oggetto 'Parameters' con la 'P' maiuscola.
-                revit_parameters = getattr(el, 'Parameters', None)
-                if not revit_parameters:
-                    print(f"ERRORE: L'elemento {el.id} non ha un oggetto 'Parameters'.", flush=True)
+                # 1. Accediamo all'oggetto 'properties'.
+                properties = getattr(el, 'properties', None)
+                if not properties:
+                    print(f"ERRORE: L'elemento {el.id} non ha un oggetto 'properties'.", flush=True)
                     validation_errors.append(el.id)
                     continue
 
-                # 2. All'interno di 'Parameters', cerchiamo 'Instance Parameters'.
+                # 2. All'interno di 'properties', cerchiamo 'Parameters'.
+                revit_parameters = getattr(properties, 'Parameters', None)
+                if not revit_parameters:
+                    print(f"ERRORE: L'elemento {el.id} non ha un oggetto 'Parameters' dentro 'properties'.", flush=True)
+                    validation_errors.append(el.id)
+                    continue
+
+                # 3. All'interno di 'Parameters', cerchiamo 'Instance Parameters'.
                 instance_params = getattr(revit_parameters, 'Instance Parameters', None)
                 if not instance_params:
                     print(f"ERRORE: L'elemento {el.id} non ha 'Instance Parameters'.", flush=True)
                     validation_errors.append(el.id)
                     continue
 
-                # 3. Cerchiamo il nostro parametro dentro 'Instance Parameters'.
+                # 4. Cerchiamo il nostro parametro dentro 'Instance Parameters'.
                 fire_rating_param = instance_params.get(FIRE_RATING_PARAM)
                 
                 if not fire_rating_param or getattr(fire_rating_param, 'value', None) is None:
@@ -84,9 +91,10 @@ def main(ctx: AutomationContext) -> None:
         if validation_errors:
             error_message = f"Validazione fallita: {len(validation_errors)} elementi non hanno il parametro '{FIRE_RATING_PARAM}' compilato."
             
+            # Usiamo 'ids' come richiesto dall'ultimo log di errore.
             ctx.attach_error_to_objects(
                 category=f"Dati Mancanti: {FIRE_RATING_PARAM}",
-                object_ids=validation_errors,
+                ids=validation_errors,
                 message=f"Il parametro '{FIRE_RATING_PARAM}' e mancante o vuoto.",
             )
             ctx.mark_run_failed(error_message)
