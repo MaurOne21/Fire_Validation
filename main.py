@@ -1,6 +1,5 @@
 # main.py
-# Versione funzionante della Regola #1: Censimento Antincendio.
-# Lo script ora legge la struttura corretta: properties -> Parameters -> Instance Parameters -> Testo.
+# Script di diagnosi definitiva per tracciare il percorso di accesso ai parametri.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -31,10 +30,10 @@ def find_all_elements(base_object) -> list:
 
 def main(ctx: AutomationContext) -> None:
     """
-    Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
-    il parametro 'Fire_Rating' compilato.
+    Esegue una diagnosi passo-passo per tracciare il percorso di accesso
+    al parametro 'Fire_Rating'.
     """
-    print("--- STARTING RULE #1: FIRE RATING CENSUS ---", flush=True)
+    print("--- STARTING FINAL DIAGNOSTIC SCRIPT ---", flush=True)
     
     try:
         commit_root_object = ctx.receive_version()
@@ -53,68 +52,56 @@ def main(ctx: AutomationContext) -> None:
             
             if any(target.lower() in category.lower() for target in TARGET_CATEGORIES):
                 objects_validated += 1
-                print(f"-> Element {el.id} (Category: {category}) identified as a target. Proceeding with validation.", flush=True)
+                print(f"\n-> Validating element {el.id} (Category: {category})", flush=True)
                 
-                # --- SOLUZIONE DEFINITIVA BASATA SULLO SCREENSHOT ---
-                # 1. Accediamo all'oggetto 'properties' (che è un dizionario).
-                properties = getattr(el, 'properties', None)
-                if not properties:
-                    print(f"ERROR: Element {el.id} does not have 'properties'.", flush=True)
-                    validation_errors.append(el)
-                    continue
+                try:
+                    # Step 1: Trova 'properties'
+                    properties = getattr(el, 'properties', None)
+                    if not properties: raise ValueError("'properties' object not found")
+                    print("   Step 1: 'properties' object found.", flush=True)
 
-                # 2. All'interno di 'properties', cerchiamo 'Parameters' (con la P maiuscola).
-                revit_parameters = properties.get('Parameters', {})
-                if not revit_parameters:
-                    print(f"ERROR: Element {el.id} does not have a 'Parameters' object inside 'properties'.", flush=True)
-                    validation_errors.append(el)
-                    continue
+                    # Step 2: Trova 'Parameters' dentro 'properties'
+                    revit_parameters = properties.get('Parameters')
+                    if not revit_parameters: raise ValueError("'Parameters' object not found inside 'properties'")
+                    print("   Step 2: 'Parameters' object found.", flush=True)
 
-                # 3. All'interno di 'Parameters', cerchiamo 'Instance Parameters'.
-                instance_params_group = revit_parameters.get('Instance Parameters', {})
-                if not instance_params_group:
-                    print(f"ERROR: Element {el.id} does not have 'Instance Parameters'.", flush=True)
-                    validation_errors.append(el)
-                    continue
-                
-                # 4. All'interno di 'Instance Parameters', cerchiamo il gruppo 'Testo'.
-                text_group = instance_params_group.get(PARAMETER_GROUP, {})
-                if not text_group:
-                    print(f"ERROR: Element {el.id} does not have the '{PARAMETER_GROUP}' group inside 'Instance Parameters'.", flush=True)
-                    validation_errors.append(el)
-                    continue
+                    # Step 3: Trova 'Instance Parameters' dentro 'Parameters'
+                    instance_params_group = revit_parameters.get('Instance Parameters')
+                    if not instance_params_group: raise ValueError("'Instance Parameters' object not found inside 'Parameters'")
+                    print("   Step 3: 'Instance Parameters' object found.", flush=True)
+                    
+                    # Step 4: Trova il gruppo 'Testo' dentro 'Instance Parameters'
+                    text_group = instance_params_group.get(PARAMETER_GROUP)
+                    if not text_group: raise ValueError(f"'{PARAMETER_GROUP}' group not found inside 'Instance Parameters'")
+                    print(f"   Step 4: '{PARAMETER_GROUP}' group found.", flush=True)
 
-                # 5. Cerchiamo il nostro parametro dentro il gruppo 'Testo'.
-                fire_rating_param = text_group.get(FIRE_RATING_PARAM)
-                
-                if not fire_rating_param or getattr(fire_rating_param, 'value', None) is None:
-                    print(f"ERROR: Element {el.id} does not have a valid '{FIRE_RATING_PARAM}'.", flush=True)
+                    # Step 5: Trova il parametro 'Fire_Rating' dentro il gruppo 'Testo'
+                    fire_rating_param = text_group.get(FIRE_RATING_PARAM)
+                    if not fire_rating_param: raise ValueError(f"'{FIRE_RATING_PARAM}' not found inside '{PARAMETER_GROUP}' group")
+                    print(f"   Step 5: '{FIRE_RATING_PARAM}' object found.", flush=True)
+                    
+                    # Step 6: Controlla il valore del parametro
+                    value = getattr(fire_rating_param, 'value', None)
+                    if value is None: raise ValueError("Parameter exists, but its 'value' is None or missing.")
+                    print(f"   Step 6: SUCCESS! Found value: '{value}'", flush=True)
+
+                except ValueError as e:
+                    print(f"   DIAGNOSTIC FAILED for element {el.id}: {e}", flush=True)
                     validation_errors.append(el)
 
-        print(f"Validation complete. {objects_validated} objects were checked.", flush=True)
+        print(f"\nDiagnostic complete. {objects_validated} objects were checked.", flush=True)
 
         if validation_errors:
-            error_message = f"Validation failed: {len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
-            
-            ctx.attach_error_to_objects(
-                category=f"Missing Data: {FIRE_RATING_PARAM}",
-                affected_objects=validation_errors,
-                message=f"The parameter '{FIRE_RATING_PARAM}' is missing or empty.",
-                visual_overrides={"color": "red"}
-            )
-            ctx.mark_run_failed(error_message)
+            ctx.mark_run_failed("Diagnostic failed. Check logs for details.")
         else:
-            if objects_validated > 0:
-                ctx.mark_run_success("Validation passed: All checked Walls and Floors have the 'FireRating' parameter.")
-            else:
-                ctx.mark_run_success("Validation complete: No Walls or Floors were found in the commit to validate.")
+            ctx.mark_run_success("Diagnostic successful. All parameters were found.")
 
     except Exception as e:
         error_message = f"An error occurred during the script execution: {e}"
         print(error_message, flush=True)
         ctx.mark_run_failed(error_message)
 
-    print("--- END OF RULE #1 ---", flush=True)
+    print("--- END OF FINAL DIAGNOSTIC SCRIPT ---", flush=True)
 
 if __name__ == "__main__":
     execute_automate_function(main)
