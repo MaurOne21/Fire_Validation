@@ -1,15 +1,7 @@
 # main.py
-# Versione funzionante della Regola #1: Censimento Antincendio.
-# AGGIORNAMENTO: Aggiunte le categorie in italiano per una corretta identificazione.
+# Script di ispezione finale per scoprire il valore esatto della proprietà 'category'.
 
 from speckle_automate import AutomationContext, execute_automate_function
-
-# Definiamo le CATEGORIE di Revit che vogliamo controllare.
-# Aggiungiamo i nomi in italiano per corrispondere ai dati del tuo modello.
-TARGET_CATEGORIES = ["Walls", "Floors", "OST_Walls", "OST_Floors", "Muri", "Pavimenti"]
-# Definiamo il nome esatto del parametro che cercheremo.
-FIRE_RATING_PARAM = "FireRating"
-
 
 def find_all_elements(base_object) -> list:
     """
@@ -34,10 +26,9 @@ def find_all_elements(base_object) -> list:
 
 def main(ctx: AutomationContext) -> None:
     """
-    Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
-    il parametro 'FireRating' compilato.
+    Esegue un'ispezione finale per stampare la 'category' di ogni elemento trovato.
     """
-    print("--- AVVIO REGOLA #1: CENSIMENTO ANTINCENDIO ---", flush=True)
+    print("--- AVVIO ISPEZIONE FINALE DELLE CATEGORIE ---", flush=True)
     
     try:
         commit_root_object = ctx.receive_version()
@@ -47,55 +38,21 @@ def main(ctx: AutomationContext) -> None:
             ctx.mark_run_success("Nessun elemento Revit trovato nel commit.")
             return
 
-        print(f"Trovati {len(all_elements)} elementi totali da analizzare.", flush=True)
+        print(f"Trovati {len(all_elements)} elementi. Ispezione delle loro 'category':", flush=True)
 
-        validation_errors = []
-        objects_validated = 0
-        for el in all_elements:
-            category = getattr(el, 'category', '')
-            
-            # Controlliamo solo le categorie che ci interessano.
-            if any(target.lower() in category.lower() for target in TARGET_CATEGORIES):
-                objects_validated += 1
-                print(f"-> Elemento {el.id} (Categoria: {category}) identificato come target. Procedo con la validazione.", flush=True)
-                
-                # --- LOGICA CORRETTA ---
-                # I parametri sono in un sotto-oggetto 'parameters'.
-                parameters = getattr(el, 'parameters', None)
-                if not parameters:
-                    print(f"ERRORE: L'elemento {el.id} non ha un oggetto 'parameters'.", flush=True)
-                    validation_errors.append(el.id)
-                    continue
+        # Iteriamo su ogni elemento e stampiamo la sua categoria.
+        for i, el in enumerate(all_elements):
+            category = getattr(el, 'category', 'CATEGORIA NON TROVATA')
+            print(f"  - Elemento #{i+1}: Categoria = '{category}'", flush=True)
 
-                fire_rating_param = parameters.get(FIRE_RATING_PARAM)
-                
-                # Il parametro stesso è un oggetto, il valore è in 'value'.
-                if not fire_rating_param or getattr(fire_rating_param, 'value', None) is None:
-                    print(f"ERRORE: L'elemento {el.id} non ha un '{FIRE_RATING_PARAM}' valido.", flush=True)
-                    validation_errors.append(el.id)
-
-        print(f"Validazione completata. {objects_validated} oggetti sono stati controllati.", flush=True)
-
-        if validation_errors:
-            error_message = f"Validazione fallita: {len(validation_errors)} elementi non hanno il parametro '{FIRE_RATING_PARAM}' compilato."
-            ctx.attach_error_to_objects(
-                category=f"Dati Mancanti: {FIRE_RATING_PARAM}",
-                object_ids=validation_errors,
-                message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante o vuoto.",
-            )
-            ctx.mark_run_failed(error_message)
-        else:
-            if objects_validated > 0:
-                ctx.mark_run_success("Validazione superata: Tutti i muri e solai controllati hanno il parametro 'FireRating' compilato.")
-            else:
-                ctx.mark_run_success("Validazione completata: Nessun muro o solaio trovato nel commit da validare.")
+        ctx.mark_run_success("Ispezione delle categorie completata. Controllare i log.")
 
     except Exception as e:
         error_message = f"Errore durante l'esecuzione dello script: {e}"
         print(error_message, flush=True)
         ctx.mark_run_failed(error_message)
 
-    print("--- FINE REGOLA #1 ---", flush=True)
+    print("--- FINE ISPEZIONE FINALE ---", flush=True)
 
 if __name__ == "__main__":
     execute_automate_function(main)
