@@ -1,22 +1,22 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Semplificato per isolare il problema di visualizzazione.
+# Lo script ora legge la struttura corretta: Parameters -> Instance Parameters -> Testo.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
 # Definiamo le CATEGORIE di Revit che vogliamo controllare.
 TARGET_CATEGORIES = ["Muri", "Pavimenti"]
 # Definiamo il nome esatto del parametro che cercheremo.
-FIRE_RATING_PARAM = "FireRating"
+FIRE_RATING_PARAM = "Fire_Rating" # NOTA: Assicurati che il nome sia esatto, con l'underscore.
+# Definiamo il gruppo in cui si trova il parametro.
+PARAMETER_GROUP = "Testo"
 
 
 def find_all_elements(base_object) -> list:
     """
-    Cerca ricorsivamente in un oggetto Speckle tutti gli elementi,
-    indipendentemente da quanto sono annidati in liste o collezioni.
+    Cerca ricorsivamente in un oggetto Speckle tutti gli elementi.
     """
     all_elements = []
-
     elements_property = getattr(base_object, 'elements', None)
     if not elements_property:
         elements_property = getattr(base_object, '@elements', None)
@@ -24,17 +24,15 @@ def find_all_elements(base_object) -> list:
     if elements_property and isinstance(elements_property, list):
         for element in elements_property:
             all_elements.extend(find_all_elements(element))
-    
     elif "Collection" not in getattr(base_object, "speckle_type", ""):
         all_elements.append(base_object)
-        
     return all_elements
 
 
 def main(ctx: AutomationContext) -> None:
     """
     Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
-    il parametro 'FireRating' compilato.
+    il parametro 'Fire_Rating' compilato.
     """
     print("--- STARTING RULE #1: FIRE RATING CENSUS ---", flush=True)
     
@@ -55,25 +53,35 @@ def main(ctx: AutomationContext) -> None:
             
             if any(target.lower() in category.lower() for target in TARGET_CATEGORIES):
                 objects_validated += 1
+                print(f"-> Element {el.id} (Category: {category}) identified as a target. Proceeding with validation.", flush=True)
                 
-                properties = getattr(el, 'properties', None)
-                if not properties:
-                    validation_errors.append(el)
-                    continue
-
-                revit_parameters = properties.get('Parameters', {})
+                # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
+                # 1. Accediamo all'oggetto 'Parameters' (con la P maiuscola).
+                revit_parameters = getattr(el, 'Parameters', None)
                 if not revit_parameters:
+                    print(f"ERROR: Element {el.id} does not have a 'Parameters' object.", flush=True)
                     validation_errors.append(el)
                     continue
 
-                instance_params = revit_parameters.get('Instance Parameters', {})
-                if not instance_params:
+                # 2. All'interno di 'Parameters', cerchiamo 'Instance Parameters'.
+                instance_params_group = getattr(revit_parameters, 'Instance Parameters', None)
+                if not instance_params_group:
+                    print(f"ERROR: Element {el.id} does not have 'Instance Parameters'.", flush=True)
+                    validation_errors.append(el)
+                    continue
+                
+                # 3. All'interno di 'Instance Parameters', cerchiamo il gruppo 'Testo'.
+                text_group = instance_params_group.get(PARAMETER_GROUP, {})
+                if not text_group:
+                    print(f"ERROR: Element {el.id} does not have the '{PARAMETER_GROUP}' group inside 'Instance Parameters'.", flush=True)
                     validation_errors.append(el)
                     continue
 
-                fire_rating_param = instance_params.get(FIRE_RATING_PARAM)
+                # 4. Cerchiamo il nostro parametro dentro il gruppo 'Testo'.
+                fire_rating_param = text_group.get(FIRE_RATING_PARAM)
                 
                 if not fire_rating_param or getattr(fire_rating_param, 'value', None) is None:
+                    print(f"ERROR: Element {el.id} does not have a valid '{FIRE_RATING_PARAM}'.", flush=True)
                     validation_errors.append(el)
 
         print(f"Validation complete. {objects_validated} objects were checked.", flush=True)
@@ -81,7 +89,6 @@ def main(ctx: AutomationContext) -> None:
         if validation_errors:
             error_message = f"Validation failed: {len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
             
-            # Alleghiamo l'errore con la colorazione.
             ctx.attach_error_to_objects(
                 category=f"Missing Data: {FIRE_RATING_PARAM}",
                 affected_objects=validation_errors,
