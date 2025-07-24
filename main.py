@@ -35,48 +35,4 @@ def find_all_elements(base_object) -> list:
 def main(ctx: AutomationContext) -> None:
     """
     Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
-    il parametro 'FireRating' compilato.
-    """
-    print("--- AVVIO REGOLA #1: CENSIMENTO ANTINCENDIO ---", flush=True)
-    
-    try:
-        commit_root_object = ctx.receive_version()
-        all_elements = find_all_elements(commit_root_object)
-
-        if not all_elements:
-            ctx.mark_run_success("Nessun elemento Revit trovato nel commit.")
-            return
-
-        print(f"Trovati {len(all_elements)} elementi totali da analizzare.", flush=True)
-
-        validation_errors = []
-        objects_validated = 0
-        for el in all_elements:
-            category = getattr(el, 'category', '')
-            
-            # Controlliamo solo le categorie che ci interessano.
-            if any(target.lower() in category.lower() for target in TARGET_CATEGORIES):
-                objects_validated += 1
-                print(f"-> Elemento {el.id} (Categoria: {category}) identificato come target. Procedo con la validazione.", flush=True)
-                
-                parameters = getattr(el, 'parameters', None)
-                if not parameters:
-                    print(f"ERRORE: L'elemento {el.id} non ha un oggetto 'parameters'.", flush=True)
-                    validation_errors.append(el.id)
-                    continue
-
-                fire_rating_param = parameters.get(FIRE_RATING_PARAM)
-                
-                # Il parametro stesso è un oggetto, il valore è in 'value'.
-                if not fire_rating_param or getattr(fire_rating_param, 'value', None) is None:
-                    print(f"ERRORE: L'elemento {el.id} non ha un '{FIRE_RATING_PARAM}' valido.", flush=True)
-                    validation_errors.append(el.id)
-
-        print(f"Validazione completata. {objects_validated} oggetti sono stati controllati.", flush=True)
-
-        if validation_errors:
-            error_message = f"Validazione fallita: {len(validation_errors)} elementi non hanno il parametro '{FIRE_RATING_PARAM}' compilato."
-            ctx.attach_error_to_objects(
-                category=f"Dati Mancanti: {FIRE_RATING_PARAM}",
-                object_ids=validation_errors,
-                message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante o vuoto
+    il parametro 'FireRating' compila
