@@ -1,13 +1,13 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Lo script ora legge la struttura corretta: Parameters -> Instance Parameters -> Testo.
+# Lo script ora legge la struttura corretta: properties -> Parameters -> Instance Parameters -> Testo.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
 # Definiamo le CATEGORIE di Revit che vogliamo controllare.
 TARGET_CATEGORIES = ["Muri", "Pavimenti"]
 # Definiamo il nome esatto del parametro che cercheremo.
-FIRE_RATING_PARAM = "Fire_Rating" # NOTA: Assicurati che il nome sia esatto, con l'underscore.
+FIRE_RATING_PARAM = "Fire_Rating"
 # Definiamo il gruppo in cui si trova il parametro.
 PARAMETER_GROUP = "Testo"
 
@@ -55,29 +55,36 @@ def main(ctx: AutomationContext) -> None:
                 objects_validated += 1
                 print(f"-> Element {el.id} (Category: {category}) identified as a target. Proceeding with validation.", flush=True)
                 
-                # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
-                # 1. Accediamo all'oggetto 'Parameters' (con la P maiuscola).
-                revit_parameters = getattr(el, 'Parameters', None)
-                if not revit_parameters:
-                    print(f"ERROR: Element {el.id} does not have a 'Parameters' object.", flush=True)
+                # --- SOLUZIONE DEFINITIVA BASATA SULLO SCREENSHOT ---
+                # 1. Accediamo all'oggetto 'properties' (che è un dizionario).
+                properties = getattr(el, 'properties', None)
+                if not properties:
+                    print(f"ERROR: Element {el.id} does not have 'properties'.", flush=True)
                     validation_errors.append(el)
                     continue
 
-                # 2. All'interno di 'Parameters', cerchiamo 'Instance Parameters'.
-                instance_params_group = getattr(revit_parameters, 'Instance Parameters', None)
+                # 2. All'interno di 'properties', cerchiamo 'Parameters' (con la P maiuscola).
+                revit_parameters = properties.get('Parameters', {})
+                if not revit_parameters:
+                    print(f"ERROR: Element {el.id} does not have a 'Parameters' object inside 'properties'.", flush=True)
+                    validation_errors.append(el)
+                    continue
+
+                # 3. All'interno di 'Parameters', cerchiamo 'Instance Parameters'.
+                instance_params_group = revit_parameters.get('Instance Parameters', {})
                 if not instance_params_group:
                     print(f"ERROR: Element {el.id} does not have 'Instance Parameters'.", flush=True)
                     validation_errors.append(el)
                     continue
                 
-                # 3. All'interno di 'Instance Parameters', cerchiamo il gruppo 'Testo'.
+                # 4. All'interno di 'Instance Parameters', cerchiamo il gruppo 'Testo'.
                 text_group = instance_params_group.get(PARAMETER_GROUP, {})
                 if not text_group:
                     print(f"ERROR: Element {el.id} does not have the '{PARAMETER_GROUP}' group inside 'Instance Parameters'.", flush=True)
                     validation_errors.append(el)
                     continue
 
-                # 4. Cerchiamo il nostro parametro dentro il gruppo 'Testo'.
+                # 5. Cerchiamo il nostro parametro dentro il gruppo 'Testo'.
                 fire_rating_param = text_group.get(FIRE_RATING_PARAM)
                 
                 if not fire_rating_param or getattr(fire_rating_param, 'value', None) is None:
