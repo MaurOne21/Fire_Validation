@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Aggiunta ispezione proprietà e correzione della chiamata API per gli errori.
+# Utilizza 'properties' per accedere ai parametri e 'object_ids' per gli errori.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -57,20 +57,16 @@ def main(ctx: AutomationContext) -> None:
                 objects_validated += 1
                 print(f"-> Elemento {el.id} (Categoria: {category}) identificato come target. Procedo con la validazione.", flush=True)
                 
-                # --- NUOVO BLOCCO DI DEBUG ---
-                # Ispezioniamo le proprietà di questo oggetto per capire perché 'parameters' non viene trovato.
-                print("   Proprietà disponibili per questo oggetto:", flush=True)
-                for prop_name in el.get_member_names():
-                    print(f"     - {prop_name}", flush=True)
-                # --- FINE BLOCCO DI DEBUG ---
-
-                parameters = getattr(el, 'parameters', None)
-                if not parameters:
-                    print(f"ERRORE: L'elemento {el.id} non ha un oggetto 'parameters'.", flush=True)
+                # --- SOLUZIONE APPLICATA QUI ---
+                # I parametri sono dentro l'oggetto 'properties', non 'parameters'.
+                properties = getattr(el, 'properties', None)
+                if not properties:
+                    print(f"ERRORE: L'elemento {el.id} non ha un oggetto 'properties'.", flush=True)
                     validation_errors.append(el.id)
                     continue
 
-                fire_rating_param = parameters.get(FIRE_RATING_PARAM)
+                # Cerchiamo il nostro parametro dentro 'properties'.
+                fire_rating_param = properties.get(FIRE_RATING_PARAM)
                 
                 if not fire_rating_param or getattr(fire_rating_param, 'value', None) is None:
                     print(f"ERRORE: L'elemento {el.id} non ha un '{FIRE_RATING_PARAM}' valido.", flush=True)
@@ -81,11 +77,11 @@ def main(ctx: AutomationContext) -> None:
         if validation_errors:
             error_message = f"Validazione fallita: {len(validation_errors)} elementi non hanno il parametro '{FIRE_RATING_PARAM}' compilato."
             
-            # --- CORREZIONE API ---
-            # L'argomento 'object_ids' è obsoleto. Usiamo 'ids'.
+            # --- SOLUZIONE API APPLICATA QUI ---
+            # L'argomento corretto è 'object_ids'.
             ctx.attach_error_to_objects(
                 category=f"Dati Mancanti: {FIRE_RATING_PARAM}",
-                ids=validation_errors,
+                object_ids=validation_errors,
                 message=f"Il parametro '{FIRE_RATING_PARAM}' e mancante o vuoto.",
             )
             ctx.mark_run_failed(error_message)
