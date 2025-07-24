@@ -85,8 +85,9 @@ def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
     # 1. Otteniamo il modello strutturale più recente.
     try:
         # --- SOLUZIONE APPLICATA QUI ---
-        # Usiamo il metodo corretto 'ctx.get_model' per caricare un altro stream.
-        structural_root_object = ctx.get_model(STRUCTURAL_STREAM_ID, "main")
+        # La funzione get_model prende solo l'ID del modello.
+        # Di default, carica l'ultima versione del branch principale ("main").
+        structural_root_object = ctx.get_model(STRUCTURAL_STREAM_ID)
         structural_elements = find_all_elements(structural_root_object)
         print(f"Successfully loaded {len(structural_elements)} elements from the structural model.", flush=True)
     except Exception as e:
