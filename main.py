@@ -87,10 +87,8 @@ def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
     # 1. Otteniamo il modello strutturale più recente.
     try:
         # --- SOLUZIONE APPLICATA QUI ---
-        # La query GraphQL è stata riformattata per rimuovere gli spazi iniziali
-        # che causavano l'errore di parsing "Not an AST Node".
-        query = f"""
-query GetLatestCommit {{
+        # La query GraphQL deve iniziare con "query" senza spazi o newline prima.
+        query = f"""query GetLatestCommit {{
   project(id: "{ctx.automation_run_data.project_id}") {{
     model(id: "{STRUCTURAL_STREAM_ID}") {{
       branch(name: "{STRUCTURAL_BRANCH_NAME}") {{
@@ -102,8 +100,7 @@ query GetLatestCommit {{
       }}
     }}
   }}
-}}
-"""
+}}"""
         
         response = ctx.speckle_client.execute_query(query=query)
         latest_commit_id = response["data"]["project"]["model"]["branch"]["commits"]["items"][0]["id"]
