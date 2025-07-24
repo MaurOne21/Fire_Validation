@@ -1,39 +1,111 @@
 # main.py
-# SCRIPT DI DIAGNOSI DEFINITIVA per l'errore 'view_options'
+# Versione funzionante della Regola #1: Censimento Antincendio.
+# Utilizza la struttura dati e i nomi dei parametri corretti scoperti tramite il debug.
 
-import inspect
 from speckle_automate import AutomationContext, execute_automate_function
+
+# Definiamo le CATEGORIE di Revit che vogliamo controllare.
+TARGET_CATEGORIES = ["Muri", "Pavimenti"]
+# Definiamo il nome esatto del parametro che cercheremo.
+FIRE_RATING_PARAM = "FireRating"
+
+
+def find_all_elements(base_object) -> list:
+    """
+    Cerca ricorsivamente in un oggetto Speckle tutti gli elementi,
+    indipendentemente da quanto sono annidati in liste o collezioni.
+    """
+    all_elements = []
+
+    elements_property = getattr(base_object, 'elements', None)
+    if not elements_property:
+        elements_property = getattr(base_object, '@elements', None)
+
+    if elements_property and isinstance(elements_property, list):
+        for element in elements_property:
+            all_elements.extend(find_all_elements(element))
+    
+    elif "Collection" not in getattr(base_object, "speckle_type", ""):
+        all_elements.append(base_object)
+        
+    return all_elements
+
 
 def main(ctx: AutomationContext) -> None:
     """
-    Questa funzione ha un solo scopo: ispezionare la funzione 'set_context_view'
-    e stampare i nomi esatti dei suoi parametri. Questo risolverà il dubbio
-    sul nome corretto da usare per i filtri visivi.
+    Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
+    il parametro 'FireRating' compilato.
     """
-    print("--- AVVIO DIAGNOSI DEFINITIVA: set_context_view ---", flush=True)
+    print("--- STARTING RULE #1: FIRE RATING CENSUS ---", flush=True)
     
     try:
-        # Usiamo il modulo 'inspect' di Python per ottenere la firma della funzione
-        signature = inspect.signature(ctx.set_context_view)
-        parameters = signature.parameters
-        
-        print("\n--- Analisi della funzione 'set_context_view' ---", flush=True)
-        print("Parametri richiesti dalla funzione:", flush=True)
-        
-        param_names = list(parameters.keys())
-        for name in param_names:
-            print(f"  - {name}", flush=True)
-            
-        print("\n--- Diagnosi completata ---", flush=True)
+        commit_root_object = ctx.receive_version()
+        all_elements = find_all_elements(commit_root_object)
 
-        ctx.mark_run_success("Diagnosi completata. Controllare i log per i nomi dei parametri.")
+        if not all_elements:
+            ctx.mark_run_success("No Revit elements found in the commit.")
+            return
+
+        print(f"Found {len(all_elements)} total elements to analyze.", flush=True)
+
+        validation_errors = []
+        objects_validated = 0
+        for el in all_elements:
+            category = getattr(el, 'category', '')
+            
+            if any(target.lower() in category.lower() for target in TARGET_CATEGORIES):
+                objects_validated += 1
+                
+                properties = getattr(el, 'properties', None)
+                if not properties:
+                    validation_errors.append(el)
+                    continue
+
+                revit_parameters = properties.get('Parameters', {})
+                if not revit_parameters:
+                    validation_errors.append(el)
+                    continue
+
+                instance_params = revit_parameters.get('Instance Parameters', {})
+                if not instance_params:
+                    validation_errors.append(el)
+                    continue
+
+                fire_rating_param = instance_params.get(FIRE_RATING_PARAM)
+                
+                if not fire_rating_param or getattr(fire_rating_param, 'value', None) is None:
+                    validation_errors.append(el)
+
+        print(f"Validation complete. {objects_validated} objects were checked.", flush=True)
+
+        if validation_errors:
+            error_message = f"Validation failed: {len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
+            
+            error_ids = [e.id for e in validation_errors]
+
+            # Creiamo il filtro di visualizzazione persistente
+            ctx.set_context_view(resource_ids=error_ids)
+            
+            # Alleghiamo l'errore con la colorazione
+            ctx.attach_error_to_objects(
+                category=f"Missing Data: {FIRE_RATING_PARAM}",
+                affected_objects=validation_errors,
+                message=f"The parameter '{FIRE_RATING_PARAM}' is missing or empty.",
+                visual_overrides={"color": "red"}
+            )
+            ctx.mark_run_failed(error_message)
+        else:
+            if objects_validated > 0:
+                ctx.mark_run_success("Validation passed: All checked Walls and Floors have the 'FireRating' parameter.")
+            else:
+                ctx.mark_run_success("Validation complete: No Walls or Floors were found in the commit to validate.")
 
     except Exception as e:
-        error_message = f"Errore durante la diagnosi: {e}"
+        error_message = f"An error occurred during the script execution: {e}"
         print(error_message, flush=True)
         ctx.mark_run_failed(error_message)
 
-    print("--- FINE DIAGNOSI DEFINITIVA ---", flush=True)
+    print("--- END OF RULE #1 ---", flush=True)
 
 if __name__ == "__main__":
     execute_automate_function(main)
