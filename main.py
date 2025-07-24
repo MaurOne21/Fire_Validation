@@ -12,7 +12,7 @@ PARAMETER_GROUP = "Testo"
 
 # --- Regola #2 ---
 # NOTA: Sostituisci questo con l'ID reale del tuo stream strutturale!
-STRUCTURAL_STREAM_ID = "ID_DEL_TUO_STREAM_STRUTTURALE" 
+STRUCTURAL_STREAM_ID = "0894f1e096" 
 # NOTA: Questo deve corrispondere al nome del parametro in Revit
 PHASE_DEMOLISHED_PARAM = "Fase di demolizione"
 # Categorie strutturali da considerare portanti
