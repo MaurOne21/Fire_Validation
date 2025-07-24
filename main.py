@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Lo script ora legge la struttura corretta: properties -> Parameters -> Instance Parameters.
+# Corretto il metodo di accesso all'oggetto 'properties'.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -58,14 +58,14 @@ def main(ctx: AutomationContext) -> None:
                 print(f"-> Elemento {el.id} (Categoria: {category}) identificato come target. Procedo con la validazione.", flush=True)
                 
                 # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
-                # 1. Accediamo all'oggetto 'properties' (che è un dizionario).
-                properties = el.get('properties', {})
+                # 1. Accediamo all'oggetto 'properties' usando getattr, perché 'el' è un oggetto Speckle.
+                properties = getattr(el, 'properties', None)
                 if not properties:
                     print(f"ERRORE: L'elemento {el.id} non ha 'properties'.", flush=True)
                     validation_errors.append(el.id)
                     continue
 
-                # 2. All'interno di 'properties', cerchiamo 'Parameters' (con la P maiuscola).
+                # 2. All'interno di 'properties' (che è un dizionario), cerchiamo 'Parameters'.
                 revit_parameters = properties.get('Parameters', {})
                 if not revit_parameters:
                     print(f"ERRORE: L'elemento {el.id} non ha un oggetto 'Parameters' dentro 'properties'.", flush=True)
@@ -94,21 +94,4 @@ def main(ctx: AutomationContext) -> None:
             ctx.attach_error_to_objects(
                 category=f"Dati Mancanti: {FIRE_RATING_PARAM}",
                 object_ids=validation_errors,
-                message=f"Il parametro '{FIRE_RATING_PARAM}' e mancante o vuoto.",
-            )
-            ctx.mark_run_failed(error_message)
-        else:
-            if objects_validated > 0:
-                ctx.mark_run_success("Validazione superata: Tutti i muri e solai controllati hanno il parametro 'FireRating' compilato.")
-            else:
-                ctx.mark_run_success("Validazione completata: Nessun muro o solaio trovato nel commit da validare.")
-
-    except Exception as e:
-        error_message = f"Errore durante l'esecuzione dello script: {e}"
-        print(error_message, flush=True)
-        ctx.mark_run_failed(error_message)
-
-    print("--- FINE REGOLA #1 ---", flush=True)
-
-if __name__ == "__main__":
-    execute_automate_function(main)
+                message=f"Il parametro '{FIRE_RATING_PARAM}' e mancante o
