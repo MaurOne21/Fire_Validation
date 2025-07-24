@@ -1,6 +1,6 @@
 # main.py
 # Script di ispezione finale per stampare l' "albero" dei parametri
-# all'interno dell'oggetto 'properties'.
+# all'interno dell'oggetto 'properties', trattandolo come un dizionario.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -51,11 +51,13 @@ def main(ctx: AutomationContext) -> None:
                     continue
 
                 print("   --- Contenuto di 'properties' ---", flush=True)
-                if hasattr(properties, 'get_member_names'):
-                    for prop_name in properties.get_member_names():
-                        print(f"     - {prop_name}", flush=True)
+                # --- SOLUZIONE APPLICATA QUI ---
+                # Trattiamo 'properties' come un dizionario Python.
+                if isinstance(properties, dict):
+                    for key in properties.keys():
+                        print(f"     - {key}", flush=True)
                 else:
-                    print("   L'oggetto 'properties' non ha il metodo 'get_member_names'.", flush=True)
+                    print(f"   L'oggetto 'properties' non è un dizionario, ma di tipo: {type(properties)}", flush=True)
                 print("   ---------------------------------", flush=True)
                 
                 # Usciamo dopo aver ispezionato il primo oggetto per mantenere i log puliti.
@@ -66,7 +68,6 @@ def main(ctx: AutomationContext) -> None:
     except Exception as e:
         error_message = f"Errore durante l'esecuzione dello script: {e}"
         print(error_message, flush=True)
-        # Usiamo 'object_ids' come richiesto dall'ultimo log di errore.
         ctx.mark_run_failed(error_message)
 
     print("--- FINE ISPEZIONE FINALE ---", flush=True)
