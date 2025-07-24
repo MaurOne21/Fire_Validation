@@ -1,5 +1,6 @@
 # main.py
-# Script di diagnosi definitiva per ispezionare la struttura dell'oggetto parametro.
+# Versione funzionante della Regola #1: Censimento Antincendio.
+# Utilizza la struttura dati e i metodi di accesso corretti scoperti tramite il debug.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -30,9 +31,10 @@ def find_all_elements(base_object) -> list:
 
 def main(ctx: AutomationContext) -> None:
     """
-    Esegue una diagnosi finale per ispezionare l'oggetto parametro 'Fire_Rating'.
+    Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
+    il parametro 'Fire_Rating' compilato.
     """
-    print("--- STARTING FINAL PARAMETER DIAGNOSTIC SCRIPT ---", flush=True)
+    print("--- STARTING RULE #1: FIRE RATING CENSUS ---", flush=True)
     
     try:
         commit_root_object = ctx.receive_version()
@@ -44,11 +46,13 @@ def main(ctx: AutomationContext) -> None:
 
         print(f"Found {len(all_elements)} total elements to analyze.", flush=True)
 
+        validation_errors = []
+        objects_validated = 0
         for el in all_elements:
             category = getattr(el, 'category', '')
             
             if any(target.lower() in category.lower() for target in TARGET_CATEGORIES):
-                print(f"\n-> Found target element {el.id} (Category: {category})", flush=True)
+                objects_validated += 1
                 
                 try:
                     # Seguiamo il percorso esatto che abbiamo scoperto.
@@ -56,37 +60,43 @@ def main(ctx: AutomationContext) -> None:
                     revit_parameters = properties['Parameters']
                     instance_params = revit_parameters['Instance Parameters']
                     text_group = instance_params[PARAMETER_GROUP]
-                    fire_rating_param_object = text_group[FIRE_RATING_PARAM]
+                    fire_rating_param_dict = text_group[FIRE_RATING_PARAM]
                     
-                    print(f"   SUCCESS: Found '{FIRE_RATING_PARAM}' parameter object.", flush=True)
-                    print("   --- INSPECTING THE PARAMETER OBJECT ---", flush=True)
-                    print(f"   Parameter Object Type: {type(fire_rating_param_object)}", flush=True)
-                    print("   Available attributes and methods:", flush=True)
+                    # --- SOLUZIONE FINALE APPLICATA QUI ---
+                    # L'oggetto parametro è un dizionario. Accediamo al valore usando la chiave "value".
+                    value = fire_rating_param_dict.get("value")
                     
-                    # Usiamo dir() per ottenere una "radiografia" completa dell'oggetto.
-                    for attr in dir(fire_rating_param_object):
-                        print(f"     - {attr}", flush=True)
+                    if value is None or not str(value).strip():
+                        raise ValueError("Parameter value is missing or empty.")
 
-                    # Proviamo a vedere se ha un attributo 'value' e stampiamolo.
-                    final_value = getattr(fire_rating_param_object, 'value', "ATTRIBUTE 'value' NOT FOUND")
-                    print(f"   Attempting to get '.value': {final_value}", flush=True)
-                    print("   --------------------------------------", flush=True)
+                except (AttributeError, KeyError, ValueError) as e:
+                    print(f"ERROR: Element {el.id} failed validation. Reason: {e}", flush=True)
+                    validation_errors.append(el)
 
-                    # Usciamo dopo aver ispezionato il primo oggetto per mantenere i log puliti.
-                    break
+        print(f"Validation complete. {objects_validated} objects were checked.", flush=True)
 
-                except (AttributeError, KeyError) as e:
-                    print(f"   DIAGNOSTIC FAILED for element {el.id}: Could not find the parameter. Reason: {e}", flush=True)
-                    continue
-
-        ctx.mark_run_success("Diagnostic complete. Check logs for the parameter object structure.")
+        if validation_errors:
+            error_message = f"Validation failed: {len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
+            
+            ctx.attach_error_to_objects(
+                category=f"Missing Data: {FIRE_RATING_PARAM}",
+                affected_objects=validation_errors,
+                message=f"The parameter '{FIRE_RATING_PARAM}' is missing or empty.",
+                visual_overrides={"color": "red"}
+            )
+            ctx.mark_run_failed(error_message)
+        else:
+            if objects_validated > 0:
+                ctx.mark_run_success("Validation passed: All checked Walls and Floors have the 'FireRating' parameter.")
+            else:
+                ctx.mark_run_success("Validation complete: No Walls or Floors were found in the commit to validate.")
 
     except Exception as e:
         error_message = f"An error occurred during the script execution: {e}"
         print(error_message, flush=True)
         ctx.mark_run_failed(error_message)
 
-    print("--- END OF FINAL DIAGNOSTIC SCRIPT ---", flush=True)
+    print("--- END OF RULE #1 ---", flush=True)
 
 if __name__ == "__main__":
     execute_automate_function(main)
