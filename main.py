@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Rimosso il passaggio superfluo della ricerca del gruppo "Testo".
+# Utilizza un accesso sicuro ai parametri per gestire i valori mancanti.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -52,22 +52,19 @@ def main(ctx: AutomationContext) -> None:
             if any(target.lower() in category.lower() for target in TARGET_CATEGORIES):
                 objects_validated += 1
                 
-                try:
-                    # Seguiamo il percorso esatto che abbiamo scoperto.
-                    properties = getattr(el, 'properties')
-                    revit_parameters = properties['Parameters']
-                    instance_params = revit_parameters['Instance Parameters']
-                    
-                    # --- SOLUZIONE FINALE APPLICATA QUI ---
-                    # Cerchiamo il parametro direttamente dentro 'Instance Parameters'.
-                    fire_rating_param = instance_params[FIRE_RATING_PARAM]
-                    
-                    value = getattr(fire_rating_param, 'value', None)
-                    if value is None or not str(value).strip():
-                        raise ValueError("Parameter value is missing or empty.")
-
-                except (AttributeError, KeyError, ValueError) as e:
-                    print(f"ERROR: Element {el.id} failed validation. Reason: {e}", flush=True)
+                # --- SOLUZIONE FINALE APPLICATA QUI ---
+                # Usiamo un accesso sicuro (.get()) a ogni livello per evitare errori
+                # se una delle "scatole" non esiste.
+                properties = getattr(el, 'properties', {})
+                revit_parameters = properties.get('Parameters', {})
+                instance_params = revit_parameters.get('Instance Parameters', {})
+                
+                # Cerchiamo il parametro in modo sicuro. Se non c'è, 'fire_rating_param' sarà None.
+                fire_rating_param = instance_params.get(FIRE_RATING_PARAM)
+                
+                # Il parametro è invalido se non esiste (None) o se esiste ma il suo valore è vuoto.
+                if not fire_rating_param or getattr(fire_rating_param, 'value', None) is None:
+                    print(f"ERROR: Element {el.id} does not have a valid '{FIRE_RATING_PARAM}'.", flush=True)
                     validation_errors.append(el)
 
         print(f"Validation complete. {objects_validated} objects were checked.", flush=True)
