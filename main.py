@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Utilizza la struttura dati e i nomi dei parametri corretti scoperti tramite il debug.
+# Rimosso il passaggio superfluo della ricerca del gruppo "Testo".
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -8,8 +8,6 @@ from speckle_automate import AutomationContext, execute_automate_function
 TARGET_CATEGORIES = ["Muri", "Pavimenti"]
 # Definiamo il nome esatto del parametro che cercheremo.
 FIRE_RATING_PARAM = "Fire_Rating"
-# Definiamo il gruppo in cui si trova il parametro.
-PARAMETER_GROUP = "Testo"
 
 
 def find_all_elements(base_object) -> list:
@@ -59,8 +57,10 @@ def main(ctx: AutomationContext) -> None:
                     properties = getattr(el, 'properties')
                     revit_parameters = properties['Parameters']
                     instance_params = revit_parameters['Instance Parameters']
-                    text_group = instance_params[PARAMETER_GROUP]
-                    fire_rating_param = text_group[FIRE_RATING_PARAM]
+                    
+                    # --- SOLUZIONE FINALE APPLICATA QUI ---
+                    # Cerchiamo il parametro direttamente dentro 'Instance Parameters'.
+                    fire_rating_param = instance_params[FIRE_RATING_PARAM]
                     
                     value = getattr(fire_rating_param, 'value', None)
                     if value is None or not str(value).strip():
