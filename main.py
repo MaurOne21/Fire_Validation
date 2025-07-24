@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Utilizza la struttura dati e i nomi dei parametri corretti scoperti tramite il debug.
+# Corretto l'invio degli oggetti alla funzione di errore.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -60,34 +60,34 @@ def main(ctx: AutomationContext) -> None:
                 properties = getattr(el, 'properties', None)
                 if not properties:
                     print(f"ERRORE: L'elemento {el.id} non ha 'properties'.", flush=True)
-                    validation_errors.append(el.id)
+                    validation_errors.append(el) # Aggiungiamo l'oggetto intero
                     continue
 
                 revit_parameters = properties.get('Parameters', {})
                 if not revit_parameters:
                     print(f"ERRORE: L'elemento {el.id} non ha un oggetto 'Parameters' dentro 'properties'.", flush=True)
-                    validation_errors.append(el.id)
+                    validation_errors.append(el) # Aggiungiamo l'oggetto intero
                     continue
 
                 instance_params = revit_parameters.get('Instance Parameters', {})
                 if not instance_params:
                     print(f"ERRORE: L'elemento {el.id} non ha 'Instance Parameters'.", flush=True)
-                    validation_errors.append(el.id)
+                    validation_errors.append(el) # Aggiungiamo l'oggetto intero
                     continue
 
                 fire_rating_param = instance_params.get(FIRE_RATING_PARAM)
                 
                 if not fire_rating_param or getattr(fire_rating_param, 'value', None) is None:
                     print(f"ERRORE: L'elemento {el.id} non ha un '{FIRE_RATING_PARAM}' valido.", flush=True)
-                    validation_errors.append(el.id)
+                    validation_errors.append(el) # Aggiungiamo l'oggetto intero
 
         print(f"Validazione completata. {objects_validated} oggetti sono stati controllati.", flush=True)
 
         if validation_errors:
             error_message = f"Validazione fallita: {len(validation_errors)} elementi non hanno il parametro '{FIRE_RATING_PARAM}' compilato."
             
-            # --- SOLUZIONE API FINALE APPLICATA QUI ---
-            # L'argomento corretto è 'affected_objects'.
+            # --- SOLUZIONE FINALE APPLICATA QUI ---
+            # Passiamo la lista degli oggetti interi, non solo i loro ID.
             ctx.attach_error_to_objects(
                 category=f"Dati Mancanti: {FIRE_RATING_PARAM}",
                 affected_objects=validation_errors,
