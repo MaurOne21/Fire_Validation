@@ -94,4 +94,21 @@ def main(ctx: AutomationContext) -> None:
             ctx.attach_error_to_objects(
                 category=f"Dati Mancanti: {FIRE_RATING_PARAM}",
                 object_ids=validation_errors,
-                message=f"Il parametro '{FIRE_RATING_PARAM}' e mancante o
+                message=f"Il parametro '{FIRE_RATING_PARAM}' e mancante o vuoto.",
+            )
+            ctx.mark_run_failed(error_message)
+        else:
+            if objects_validated > 0:
+                ctx.mark_run_success("Validazione superata: Tutti i muri e solai controllati hanno il parametro 'FireRating' compilato.")
+            else:
+                ctx.mark_run_success("Validazione completata: Nessun muro o solaio trovato nel commit da validare.")
+
+    except Exception as e:
+        error_message = f"Errore durante l'esecuzione dello script: {e}"
+        print(error_message, flush=True)
+        ctx.mark_run_failed(error_message)
+
+    print("--- FINE REGOLA #1 ---", flush=True)
+
+if __name__ == "__main__":
+    execute_automate_function(main)
