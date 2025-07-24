@@ -1,13 +1,12 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Lo script ora è in grado di leggere i parametri annidati dentro gli oggetti Revit.
+# AGGIORNAMENTO: Aggiunte le categorie in italiano per una corretta identificazione.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
 # Definiamo le CATEGORIE di Revit che vogliamo controllare.
-# NOTA: Questi devono corrispondere ai nomi delle categorie in Revit.
-# Potrebbero essere in italiano (es. "Muri", "Pavimenti") a seconda del tuo Revit.
-TARGET_CATEGORIES = ["Walls", "Floors", "OST_Walls", "OST_Floors"]
+# Aggiungiamo i nomi in italiano per corrispondere ai dati del tuo modello.
+TARGET_CATEGORIES = ["Walls", "Floors", "OST_Walls", "OST_Floors", "Muri", "Pavimenti"]
 # Definiamo il nome esatto del parametro che cercheremo.
 FIRE_RATING_PARAM = "FireRating"
 
