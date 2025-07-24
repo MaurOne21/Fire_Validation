@@ -86,35 +86,11 @@ def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
     
     # 1. Otteniamo il modello strutturale più recente.
     try:
-        # Costruiamo una query GraphQL per ottenere l'ID dell'ultimo commit
-        # del branch specificato nel modello strutturale.
-        query = """
-            query GetLatestCommit($project_id: String!, $model_id: String!, $branch_name: String!) {
-              project(id: $project_id) {
-                model(id: $model_id) {
-                  branch(name: $branch_name) {
-                    commits(limit: 1) {
-                      items {
-                        id
-                      }
-                    }
-                  }
-                }
-              }
-            }
-        """
-        variables = {
-            "project_id": ctx.automation_run_data.project_id,
-            "model_id": STRUCTURAL_STREAM_ID,
-            "branch_name": STRUCTURAL_BRANCH_NAME,
-        }
-        
         # --- SOLUZIONE APPLICATA QUI ---
-        # Il nome corretto dell'argomento è 'variable_values'.
-        response = ctx.speckle_client.execute_query(query=query, variable_values=variables)
-        latest_commit_id = response["project"]["model"]["branch"]["commits"]["items"][0]["id"]
-        
-        structural_root_object = ctx.receive_version(latest_commit_id)
+        # Usiamo il metodo 'get_model' passando sia l'ID del modello che il nome del branch.
+        structural_root_object = ctx.get_model(
+            model_id=STRUCTURAL_STREAM_ID, branch_name=STRUCTURAL_BRANCH_NAME
+        )
         structural_elements = find_all_elements(structural_root_object)
         print(f"Successfully loaded {len(structural_elements)} elements from the structural model.", flush=True)
     except Exception as e:
