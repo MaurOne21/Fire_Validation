@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante della Regola #1: Censimento Antincendio.
-# Utilizza un metodo di ricerca diretto e non ricorsivo per trovare gli elementi.
+# Aggiunto logging per il tipo di oggetto per il debug finale.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -51,9 +51,11 @@ def main(ctx: AutomationContext) -> None:
         objects_validated = 0
         for el in all_elements:
             speckle_type = getattr(el, 'speckle_type', '')
+            # Aggiungiamo un print per vedere il tipo esatto di ogni oggetto.
+            print(f"Analizzando elemento ID {el.id} con tipo: {speckle_type}", flush=True)
             
             # Controlliamo solo i tipi che ci interessano (Muri e Solai)
-            if any(target in speckle_type for target in TARGET_TYPES):
+            if any(target.lower() in speckle_type.lower() for target in TARGET_TYPES):
                 objects_validated += 1
                 print(f"-> Elemento {el.id} ({speckle_type}) identificato come target. Procedo con la validazione.", flush=True)
                 
