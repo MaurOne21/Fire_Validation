@@ -1,15 +1,22 @@
 # main.py
-# Script di diagnosi per la Regola #2. Ispeziona la funzione 'ctx.get_model'
-# per scoprire i suoi argomenti corretti.
+# Versione funzionante con la Regola #1 (Censimento Antincendio)
+# e la Regola #2 (Workflow di Approvazione Demolizioni), con la chiamata API corretta.
 
-import inspect
 from speckle_automate import AutomationContext, execute_automate_function
 
 #============== CONFIGURAZIONE GLOBALE ===============================================
+# --- Regola #1 ---
 TARGET_CATEGORIES_RULE_1 = ["Muri", "Pavimenti"]
 FIRE_RATING_PARAM = "Fire_Rating"
 PARAMETER_GROUP = "Testo"
+
+# --- Regola #2 ---
+# NOTA: Sostituisci questo con l'ID reale del tuo stream strutturale!
 STRUCTURAL_STREAM_ID = "d48a1d3b3c" 
+# NOTA: Questo deve corrispondere al nome del parametro in Revit
+PHASE_DEMOLISHED_PARAM = "Fase di demolizione"
+# Categorie strutturali da considerare portanti
+STRUCTURAL_CATEGORIES = ["Muri", "Pilastri", "Travi", "Structural Framing", "Structural Columns"]
 #=====================================================================================
 
 
@@ -37,37 +44,91 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
     il parametro 'Fire_Rating' compilato.
     """
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
+    
     validation_errors = []
-    # ... (la logica della Regola #1 rimane qui, ma per il test possiamo saltarla)
-    print(f"Rule #1 Finished. Skipping logic for this test.", flush=True)
+    for el in all_elements:
+        category = getattr(el, 'category', '')
+        if any(target.lower() in category.lower() for target in TARGET_CATEGORIES_RULE_1):
+            try:
+                properties = getattr(el, 'properties')
+                revit_parameters = properties['Parameters']
+                instance_params = revit_parameters['Instance Parameters']
+                text_group = instance_params[PARAMETER_GROUP]
+                fire_rating_param_dict = text_group[FIRE_RATING_PARAM]
+                value = fire_rating_param_dict.get("value")
+                if value is None or not str(value).strip():
+                    raise ValueError("Parameter value is missing or empty.")
+            except (AttributeError, KeyError, ValueError) as e:
+                print(f"ERROR (Rule 1): Element {el.id} failed validation. Reason: {e}", flush=True)
+                validation_errors.append(el)
+
+    if validation_errors:
+        ctx.attach_error_to_objects(
+            category=f"Missing Data: {FIRE_RATING_PARAM}",
+            affected_objects=validation_errors,
+            message=f"The parameter '{FIRE_RATING_PARAM}' is missing or empty.",
+            visual_overrides={"color": "red"}
+        )
+    
+    print(f"Rule #1 Finished. {len(validation_errors)} errors found.", flush=True)
     return validation_errors
 
 
-#============== DIAGNOSI PER LA REGOLA #2 ===========================================
-def run_demolition_check_diagnostic(all_elements: list, ctx: AutomationContext) -> list:
+#============== LOGICA DELLA REGOLA #2 (CORRETTA) ======================================
+def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
     """
-    Esegue una diagnosi sulla funzione 'ctx.get_model'.
+    Esegue la Regola #2: Controlla se un elemento in fase di demolizione
+    interseca un elemento portante.
     """
-    print("--- RUNNING DIAGNOSTIC FOR RULE #2 ---", flush=True)
+    print("--- RUNNING RULE #2: DEMOLITION APPROVAL WORKFLOW ---", flush=True)
     
+    # 1. Otteniamo il modello strutturale più recente.
     try:
-        print("\n--- Analisi della funzione 'ctx.get_model' ---", flush=True)
-        
-        # Usiamo il modulo 'inspect' per ottenere la firma della funzione
-        signature = inspect.signature(ctx.get_model)
-        parameters = signature.parameters
-        
-        print("Parametri richiesti dalla funzione 'get_model':", flush=True)
-        
-        param_names = list(parameters.keys())
-        for name in param_names:
-            print(f"  - {name}", flush=True)
-            
-        print("\n--- Diagnosi completata ---", flush=True)
-
+        # --- SOLUZIONE APPLICATA QUI ---
+        # Usiamo il nome del parametro corretto: 'model_id'.
+        structural_root_object = ctx.get_model(model_id=STRUCTURAL_STREAM_ID)
+        structural_elements = find_all_elements(structural_root_object)
+        print(f"Successfully loaded {len(structural_elements)} elements from the structural model.", flush=True)
     except Exception as e:
-        print(f"DIAGNOSTIC FAILED: {e}", flush=True)
+        print(f"ERROR (Rule 2): Could not load the structural model. Reason: {e}", flush=True)
+        return []
 
+    # 2. Filtriamo gli elementi strutturali per trovare solo quelli portanti.
+    load_bearing_elements = []
+    for el in structural_elements:
+        category = getattr(el, 'category', '')
+        if any(target.lower() in category.lower() for target in STRUCTURAL_CATEGORIES):
+            load_bearing_elements.append(el)
+    
+    print(f"Found {len(load_bearing_elements)} load-bearing elements.", flush=True)
+
+    # 3. Troviamo gli elementi architettonici in fase di demolizione.
+    demolished_elements = []
+    for el in all_elements:
+        try:
+            properties = getattr(el, 'properties')
+            revit_parameters = properties['Parameters']
+            instance_params = revit_parameters['Instance Parameters']
+            fasi_group = instance_params.get("Fasi", {})
+            phase_demolished = fasi_group.get(PHASE_DEMOLISHED_PARAM, {})
+            
+            if phase_demolished.get("value") and phase_demolished.get("value") != "Nessuno":
+                demolished_elements.append(el)
+        except (AttributeError, KeyError):
+            continue
+    
+    print(f"Found {len(demolished_elements)} demolished elements in the current commit.", flush=True)
+
+    # 4. Per ora, ci limitiamo a segnalare gli elementi demoliti.
+    if demolished_elements:
+        ctx.attach_warning_to_objects(
+            category="Structural Demolition Review",
+            affected_objects=demolished_elements,
+            message="This element is set to be demolished. Please ensure this does not affect a load-bearing element.",
+            visual_overrides={"color": "orange"}
+        )
+    
+    print(f"Rule #2 Finished. {len(demolished_elements)} demolished elements found.", flush=True)
     return []
 
 
@@ -90,8 +151,7 @@ def main(ctx: AutomationContext) -> None:
 
         all_errors = []
         all_errors.extend(run_fire_rating_check(all_elements, ctx))
-        # Eseguiamo la nostra funzione di diagnosi invece della regola vera e propria
-        all_errors.extend(run_demolition_check_diagnostic(all_elements, ctx))
+        all_errors.extend(run_demolition_check(all_elements, ctx))
         
         if all_errors:
             ctx.mark_run_failed(f"Validation failed with a total of {len(all_errors)} errors.")
