@@ -89,23 +89,25 @@ def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
         # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
         # Costruiamo la query GraphQL come una singola stringa per evitare
         # problemi di formattazione (spazi, newline) che causano l'errore "Not an AST Node".
-        query = (
-            "query GetLatestCommit {"
-            f'project(id: "{ctx.automation_run_data.project_id}") {{'
-            f'model(id: "{STRUCTURAL_STREAM_ID}") {{'
-            f'branch(name: "{STRUCTURAL_BRANCH_NAME}") {{'
-            "commits(limit: 1) {"
-            "items {"
-            "id"
-            "}"
-            "}"
-            "}"
-            "}"
-            "}"
-            "}"
-        )
+        raw_query = f"""
+            query GetLatestCommit {{
+              project(id: "{ctx.automation_run_data.project_id}") {{
+                model(id: "{STRUCTURAL_STREAM_ID}") {{
+                  branch(name: "{STRUCTURAL_BRANCH_NAME}") {{
+                    commits(limit: 1) {{
+                      items {{
+                        id
+                      }}
+                    }}
+                  }}
+                }}
+              }}
+            }}
+        """
+        # Pulisce la query da spazi multipli, newline e tabulazioni.
+        clean_query = " ".join(raw_query.split())
         
-        response = ctx.speckle_client.execute_query(query=query)
+        response = ctx.speckle_client.execute_query(query=clean_query)
         latest_commit_id = response["data"]["project"]["model"]["branch"]["commits"]["items"][0]["id"]
         
         structural_root_object = ctx.receive_version(latest_commit_id)
