@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante con la Regola #1 (Censimento Antincendio)
-# e la Regola #3 (Integrità Compartimentazioni), con logica di accesso ai dati robusta.
+# e la Regola #3 (Integrità Compartimentazioni), con la logica corretta per il parametro di tipo Testo.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -72,8 +72,8 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
 #============== LOGICA DELLA REGOLA #3 (CORRETTA E ROBUSTA) ===========================
 def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
     """
-    Esegue la Regola #3: Controlla che tutte le porte/finestre nei muri REI
-    abbiano la sigillatura specificata.
+    Esegue la Regola #3: Controlla che tutte le porte/finestre abbiano
+    il parametro di sigillatura impostato su "Si".
     """
     print("--- RUNNING RULE #3: FIRE COMPARTMENTATION CHECK ---", flush=True)
     
@@ -85,12 +85,10 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
             
             is_sealed = False
             try:
-                # --- SOLUZIONE ROBUSTA APPLICATA QUI ---
                 # Usiamo .get() a ogni livello per navigare la struttura in modo sicuro.
                 properties = getattr(el, 'properties', {})
                 revit_parameters = properties.get('Parameters', {})
                 instance_params = revit_parameters.get('Instance Parameters', {})
-                # Ora cerchiamo il parametro nel gruppo unificato "Testo".
                 text_group = instance_params.get(PARAMETER_GROUP, {})
                 seal_param_dict = text_group.get(FIRE_SEAL_PARAM)
                 
@@ -102,7 +100,6 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
                         is_sealed = True
 
             except Exception as e:
-                # Se c'è un errore imprevisto nella struttura, lo segnaliamo.
                 print(f"WARNING (Rule 3): Could not parse parameters for opening {el.id}. Reason: {e}", flush=True)
 
             # Aggiungiamo l'errore solo se il valore non è "Si".
