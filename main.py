@@ -109,16 +109,17 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
             # ma verifichiamo solo che TUTTE le porte abbiano il parametro se si trovano in un muro REI.
             # Questa è una semplificazione accettabile per la demo.
             try:
+                # --- SOLUZIONE APPLICATA QUI ---
+                # Cerchiamo il parametro nel percorso corretto: properties -> Parameters -> Instance Parameters -> Testo
                 properties = getattr(el, 'properties')
                 revit_parameters = properties['Parameters']
                 instance_params = revit_parameters['Instance Parameters']
+                text_group = instance_params[PARAMETER_GROUP]
+                seal_param_dict = text_group[FIRE_SEAL_PARAM]
                 
-                # I parametri custom potrebbero non essere in un gruppo specifico
-                seal_param = instance_params.get(FIRE_SEAL_PARAM)
-                
-                value = seal_param.get("value") if seal_param else None
+                value = seal_param_dict.get("value")
                 if not value: # Fallisce se il valore è None, False, o vuoto
-                    raise ValueError("Fire seal parameter is missing or False.")
+                    raise ValueError("Fire seal parameter is missing or set to 'No'.")
 
             except (AttributeError, KeyError, ValueError) as e:
                 print(f"ERROR (Rule 3): Opening {el.id} failed validation. Reason: {e}", flush=True)
