@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante con la Regola #1 (Censimento Antincendio)
-# e la Regola #3 (Integrità Compartimentazioni), con la logica corretta.
+# e la Regola #3 (Integrità Compartimentazioni), con logica di accesso ai dati robusta.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -69,7 +69,7 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
     return validation_errors
 
 
-#============== LOGICA DELLA REGOLA #3 (CORRETTA) ======================================
+#============== LOGICA DELLA REGOLA #3 (CORRETTA E ROBUSTA) ===========================
 def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
     """
     Esegue la Regola #3: Controlla che tutte le porte/finestre nei muri REI
@@ -95,13 +95,17 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
                 seal_param_dict = text_group.get(FIRE_SEAL_PARAM)
                 
                 if seal_param_dict:
-                    # Un parametro Sì/No in Revit viene tradotto in un booleano True/False.
-                    is_sealed = seal_param_dict.get("value", False)
+                    value = seal_param_dict.get("value")
+                    # Controlliamo esplicitamente se il valore è la stringa "Si" 
+                    # (ignorando maiuscole/minuscole e spazi).
+                    if isinstance(value, str) and value.strip().lower() == "si":
+                        is_sealed = True
 
             except Exception as e:
+                # Se c'è un errore imprevisto nella struttura, lo segnaliamo.
                 print(f"WARNING (Rule 3): Could not parse parameters for opening {el.id}. Reason: {e}", flush=True)
 
-            # Aggiungiamo l'errore solo se il valore è esplicitamente False o non trovato.
+            # Aggiungiamo l'errore solo se il valore non è "Si".
             if not is_sealed:
                 print(f"ERROR (Rule 3): Opening {el.id} is not sealed.", flush=True)
                 penetration_errors.append(el)
@@ -110,7 +114,7 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
         ctx.attach_error_to_objects(
             category="Unsealed Fire Penetration",
             affected_objects=penetration_errors,
-            message=f"This opening requires a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Yes').",
+            message=f"This opening requires a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Si').",
             visual_overrides={"color": "#FF8C00"} # Arancione scuro
         )
     
