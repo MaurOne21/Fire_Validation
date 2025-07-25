@@ -1,5 +1,6 @@
 # main.py
 # Versione completa e funzionante con integrazione AI per le Regole #1 e #3.
+# AGGIORNAMENTO: Le notifiche ora sono formattate per Discord.
 
 import json
 import requests
@@ -8,7 +9,7 @@ from speckle_automate import AutomationContext, execute_automate_function
 #============== CONFIGURAZIONE GLOBALE ===============================================
 # ❗ INSERISCI QUI LE TUE CHIAVI!
 GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
-WEBHOOK_URL = "https://webhook.site/7787200c-ab85-499c-9a90-5416a2fbd072"
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
 
 # --- Regole ---
 TARGET_CATEGORIES_RULE_1 = ["Muri", "Pavimenti"]
@@ -68,31 +69,39 @@ def get_ai_suggestion(error_description: str) -> str:
 
 def send_webhook_notification(ctx: AutomationContext, error_category: str, failed_elements: list, ai_suggestion: str):
     """
-    Invia una notifica a un webhook generico con i dettagli dell'errore.
+    Invia una notifica a un webhook di Discord con i dettagli dell'errore.
     """
-    if not WEBHOOK_URL or WEBHOOK_URL == "IL_TUO_URL_DA_WEBHOOK.SITE":
+    if not DISCORD_WEBHOOK_URL or DISCORD_WEBHOOK_URL == "IL_TUO_URL_DEL_WEBHOOK_DI_DISCORD":
         return
 
-    print("Sending webhook notification...", flush=True)
+    print("Sending Discord webhook notification...", flush=True)
     
-    # --- CORREZIONE APPLICATA QUI ---
-    # Il nome corretto della proprietà è 'stream_id', non 'model_id'.
-    commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{ctx.automation_run_data.stream_id}@{ctx.automation_run_data.version_id}"
+    commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{ctx.automation_run_data.model_id}@{ctx.automation_run_data.version_id}"
     
+    # Messaggio formattato per Discord usando gli "Embeds"
     message = {
-        "alert_type": "Speckle Automation Alert",
-        "error_category": error_category,
-        "project_id": ctx.automation_run_data.project_id,
-        "model_id": ctx.automation_run_data.stream_id,
-        "failed_elements_count": len(failed_elements),
-        "ai_suggestion": ai_suggestion,
-        "link_to_commit": commit_url
+        "username": "Speckle Validator",
+        "avatar_url": "https://speckle.systems/favicon.ico",
+        "embeds": [
+            {
+                "title": f"🚨 Validation Alert: {error_category}",
+                "description": f"A validation rule failed in project **{ctx.automation_run_data.project_id}**.",
+                "url": commit_url,
+                "color": 15158332,  # Rosso
+                "fields": [
+                    {"name": "Model", "value": f"`{ctx.automation_run_data.model_id}`", "inline": True},
+                    {"name": "Failed Elements", "value": str(len(failed_elements)), "inline": True},
+                    {"name": "🤖 AI Suggested Actions", "value": ai_suggestion, "inline": False},
+                ],
+                "footer": {"text": f"Commit ID: {ctx.automation_run_data.version_id}"}
+            }
+        ]
     }
 
     try:
-        requests.post(WEBHOOK_URL, json=message)
+        requests.post(DISCORD_WEBHOOK_URL, json=message)
     except Exception as e:
-        print(f"Could not send webhook notification. Reason: {e}", flush=True)
+        print(f"Could not send Discord webhook notification. Reason: {e}", flush=True)
 
 
 #============== LOGICA DELLE REGOLE (POTENZIATA) =====================================
