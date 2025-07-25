@@ -1,6 +1,6 @@
 # main.py
 # Versione completa e funzionante con integrazione AI per le Regole #1 e #3.
-# AGGIORNAMENTO: Le notifiche ora sono formattate per Discord.
+# AGGIORNAMENTO: Corretto l'errore 'model_id' nella funzione di notifica.
 
 import json
 import requests
@@ -76,7 +76,9 @@ def send_webhook_notification(ctx: AutomationContext, error_category: str, faile
 
     print("Sending Discord webhook notification...", flush=True)
     
-    commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{ctx.automation_run_data.model_id}@{ctx.automation_run_data.version_id}"
+    # --- CORREZIONE APPLICATA QUI ---
+    # Il nome corretto della proprietà è 'stream_id', non 'model_id'.
+    commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{ctx.automation_run_data.stream_id}@{ctx.automation_run_data.version_id}"
     
     # Messaggio formattato per Discord usando gli "Embeds"
     message = {
@@ -89,7 +91,7 @@ def send_webhook_notification(ctx: AutomationContext, error_category: str, faile
                 "url": commit_url,
                 "color": 15158332,  # Rosso
                 "fields": [
-                    {"name": "Model", "value": f"`{ctx.automation_run_data.model_id}`", "inline": True},
+                    {"name": "Model", "value": f"`{ctx.automation_run_data.stream_id}`", "inline": True},
                     {"name": "Failed Elements", "value": str(len(failed_elements)), "inline": True},
                     {"name": "🤖 AI Suggested Actions", "value": ai_suggestion, "inline": False},
                 ],
