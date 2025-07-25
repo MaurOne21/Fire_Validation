@@ -8,13 +8,14 @@ from speckle_automate import AutomationContext, execute_automate_function
 # --- Regola #1 ---
 TARGET_CATEGORIES_RULE_1 = ["Muri", "Pavimenti"]
 FIRE_RATING_PARAM = "Fire_Rating"
-PARAMETER_GROUP = "Testo"
+PARAMETER_GROUP_RULE_1 = "Testo"
 
 # --- Regola #3 ---
 TARGET_CATEGORIES_RULE_3 = ["Muri"]
-# Usiamo il nome della categoria in italiano che abbiamo scoperto: "Porte"
 OPENING_CATEGORIES = ["Porte", "Finestre"] 
 FIRE_SEAL_PARAM = "Sigillatura_Rei_Installation"
+# NOTA: Aggiornato con il gruppo corretto per il parametro della sigillatura
+PARAMETER_GROUP_RULE_3 = "Altro"
 #=====================================================================================
 
 
@@ -51,7 +52,7 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
                 properties = getattr(el, 'properties')
                 revit_parameters = properties['Parameters']
                 instance_params = revit_parameters['Instance Parameters']
-                text_group = instance_params[PARAMETER_GROUP]
+                text_group = instance_params[PARAMETER_GROUP_RULE_1]
                 fire_rating_param_dict = text_group[FIRE_RATING_PARAM]
                 value = fire_rating_param_dict.get("value")
                 if value is None or not str(value).strip():
@@ -88,7 +89,7 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
                 properties = getattr(el, 'properties')
                 revit_parameters = properties['Parameters']
                 instance_params = revit_parameters['Instance Parameters']
-                text_group = instance_params[PARAMETER_GROUP]
+                text_group = instance_params[PARAMETER_GROUP_RULE_1]
                 fire_rating_param_dict = text_group[FIRE_RATING_PARAM]
                 value = fire_rating_param_dict.get("value")
                 if value and "REI" in str(value):
@@ -105,20 +106,17 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
     for el in all_elements:
         category = getattr(el, 'category', '')
         if any(target.lower() in category.lower() for target in OPENING_CATEGORIES):
-            # Per ora, non controlliamo l'intersezione geometrica (più complesso),
-            # ma verifichiamo solo che TUTTE le porte abbiano il parametro se si trovano in un muro REI.
-            # Questa è una semplificazione accettabile per la demo.
             try:
                 # --- SOLUZIONE APPLICATA QUI ---
-                # Cerchiamo il parametro nel percorso corretto: properties -> Parameters -> Instance Parameters -> Testo
+                # Cerchiamo il parametro nel percorso corretto: properties -> Parameters -> Instance Parameters -> Altro
                 properties = getattr(el, 'properties')
                 revit_parameters = properties['Parameters']
                 instance_params = revit_parameters['Instance Parameters']
-                text_group = instance_params[PARAMETER_GROUP]
-                seal_param_dict = text_group[FIRE_SEAL_PARAM]
+                other_group = instance_params[PARAMETER_GROUP_RULE_3]
+                seal_param_dict = other_group[FIRE_SEAL_PARAM]
                 
                 value = seal_param_dict.get("value")
-                if not value: # Fallisce se il valore è None, False, o vuoto
+                if not value: # Fallisce se il valore è None, False (per i Sì/No), o vuoto
                     raise ValueError("Fire seal parameter is missing or set to 'No'.")
 
             except (AttributeError, KeyError, ValueError) as e:
