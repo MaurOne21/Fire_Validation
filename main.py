@@ -1,5 +1,5 @@
 # main.py
-# Versione di diagnosi per la Regola #3. Ispeziona la struttura dei parametri delle aperture.
+# Versione di diagnosi per la Regola #3. Ispeziona la struttura dei parametri della prima apertura trovata.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -10,8 +10,7 @@ FIRE_RATING_PARAM = "Fire_Rating"
 PARAMETER_GROUP = "Testo"
 
 # --- Regola #3 ---
-TARGET_CATEGORIES_RULE_3 = ["Muri"]
-OPENING_TYPES = ["Opening", "Door", "Window"] # Tipi di oggetti che rappresentano fori
+OPENING_TYPES = ["Door", "Window", "Porte", "Finestre"] # Tipi di oggetti che rappresentano fori
 FIRE_SEAL_PARAM = "Sigillatura_Rei_Installation"
 #=====================================================================================
 
@@ -50,41 +49,24 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
 #============== DIAGNOSI PER LA REGOLA #3 ===========================================
 def run_penetration_check_diagnostic(all_elements: list, ctx: AutomationContext) -> list:
     """
-    Esegue una diagnosi sulla struttura dei parametri delle aperture (porte/finestre).
+    Esegue una diagnosi sulla struttura dei parametri della prima apertura trovata.
     """
     print("--- RUNNING DIAGNOSTIC FOR RULE #3 ---", flush=True)
     
-    fire_rated_walls = []
+    # Cerchiamo la prima porta o finestra in tutto il commit.
     for el in all_elements:
+        speckle_type = getattr(el, 'speckle_type', '')
         category = getattr(el, 'category', '')
-        if any(target.lower() in category.lower() for target in TARGET_CATEGORIES_RULE_3):
-            try:
-                properties = getattr(el, 'properties')
-                revit_parameters = properties['Parameters']
-                instance_params = revit_parameters['Instance Parameters']
-                text_group = instance_params[PARAMETER_GROUP]
-                fire_rating_param_dict = text_group[FIRE_RATING_PARAM]
-                value = fire_rating_param_dict.get("value")
-                if value and "REI" in str(value):
-                    fire_rated_walls.append(el)
-            except (AttributeError, KeyError):
-                continue
-    
-    print(f"Found {len(fire_rated_walls)} fire-rated walls.", flush=True)
-
-    for wall in fire_rated_walls:
-        openings = getattr(wall, 'elements', [])
-        if not openings:
-            openings = getattr(wall, '@elements', [])
-
-        if openings:
-            # Ispezioniamo solo la prima apertura che troviamo per mantenere i log puliti.
-            first_opening = openings[0]
-            print(f"\n--- INSPECTING FIRST OPENING IN WALL {wall.id} ---", flush=True)
-            print(f"Opening ID: {getattr(first_opening, 'id', 'N/A')}", flush=True)
-            print(f"Opening Speckle Type: {getattr(first_opening, 'speckle_type', 'N/A')}", flush=True)
+        
+        if any(target.lower() in speckle_type.lower() for target in OPENING_TYPES) or \
+           any(target.lower() in category.lower() for target in OPENING_TYPES):
             
-            properties = getattr(first_opening, 'properties', None)
+            print(f"\n--- INSPECTING FIRST OPENING FOUND ---", flush=True)
+            print(f"Opening ID: {getattr(el, 'id', 'N/A')}", flush=True)
+            print(f"Opening Speckle Type: {speckle_type}", flush=True)
+            print(f"Opening Category: {category}", flush=True)
+            
+            properties = getattr(el, 'properties', None)
             if not properties:
                 print("   ERROR: This opening does not have a 'properties' object.", flush=True)
                 continue
@@ -113,6 +95,7 @@ def run_penetration_check_diagnostic(all_elements: list, ctx: AutomationContext)
             # Usciamo dopo aver ispezionato la prima apertura.
             return []
 
+    print("No openings (Doors/Windows) found in the commit.", flush=True)
     return []
 
 
