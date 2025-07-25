@@ -1,17 +1,11 @@
 # main.py
-# Versione funzionante con la Regola #1 (Censimento Antincendio)
-# e la Regola #3 (Integrità Compartimentazioni), con la logica corretta.
+# Script di diagnosi definitiva per ispezionare la struttura dell'oggetto parametro
+# 'Sigillatura_Rei_Installation' di una porta.
 
+import inspect
 from speckle_automate import AutomationContext, execute_automate_function
 
 #============== CONFIGURAZIONE GLOBALE ===============================================
-# --- Regola #1 ---
-TARGET_CATEGORIES_RULE_1 = ["Muri", "Pavimenti"]
-FIRE_RATING_PARAM = "Fire_Rating"
-PARAMETER_GROUP_RULE_1 = "Testo"
-
-# --- Regola #3 ---
-TARGET_CATEGORIES_RULE_3 = ["Muri"]
 OPENING_CATEGORIES = ["Porte", "Finestre"] 
 FIRE_SEAL_PARAM = "Sigillatura_Rei_Installation"
 #=====================================================================================
@@ -34,113 +28,64 @@ def find_all_elements(base_object) -> list:
     return all_elements
 
 
-#============== LOGICA DELLA REGOLA #1 (FUNZIONANTE) =================================
-def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
+#============== DIAGNOSI PER LA REGOLA #3 ===========================================
+def run_penetration_check_diagnostic(all_elements: list, ctx: AutomationContext) -> list:
     """
-    Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
-    il parametro 'Fire_Rating' compilato.
+    Esegue una diagnosi sulla struttura del parametro 'Sigillatura_Rei_Installation'.
     """
-    print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
+    print("--- RUNNING DIAGNOSTIC FOR RULE #3 ---", flush=True)
     
-    validation_errors = []
-    for el in all_elements:
-        category = getattr(el, 'category', '')
-        if any(target.lower() in category.lower() for target in TARGET_CATEGORIES_RULE_1):
-            try:
-                properties = getattr(el, 'properties')
-                revit_parameters = properties['Parameters']
-                instance_params = revit_parameters['Instance Parameters']
-                text_group = instance_params[PARAMETER_GROUP_RULE_1]
-                fire_rating_param_dict = text_group[FIRE_RATING_PARAM]
-                value = fire_rating_param_dict.get("value")
-                if value is None or not str(value).strip():
-                    raise ValueError("Parameter value is missing or empty.")
-            except (AttributeError, KeyError, ValueError) as e:
-                print(f"ERROR (Rule 1): Element {el.id} failed validation. Reason: {e}", flush=True)
-                validation_errors.append(el)
-
-    if validation_errors:
-        ctx.attach_error_to_objects(
-            category=f"Missing Data: {FIRE_RATING_PARAM}",
-            affected_objects=validation_errors,
-            message=f"The parameter '{FIRE_RATING_PARAM}' is missing or empty.",
-            visual_overrides={"color": "red"}
-        )
-    
-    print(f"Rule #1 Finished. {len(validation_errors)} errors found.", flush=True)
-    return validation_errors
-
-
-#============== LOGICA DELLA REGOLA #3 (CORRETTA) ======================================
-def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
-    """
-    Esegue la Regola #3: Controlla che tutte le porte/finestre nei muri REI
-    abbiano la sigillatura specificata.
-    """
-    print("--- RUNNING RULE #3: FIRE COMPARTMENTATION CHECK ---", flush=True)
-    
-    fire_rated_walls = []
-    for el in all_elements:
-        category = getattr(el, 'category', '')
-        if any(target.lower() in category.lower() for target in TARGET_CATEGORIES_RULE_3):
-            try:
-                properties = getattr(el, 'properties')
-                revit_parameters = properties['Parameters']
-                instance_params = revit_parameters['Instance Parameters']
-                text_group = instance_params[PARAMETER_GROUP_RULE_1]
-                fire_rating_param_dict = text_group[FIRE_RATING_PARAM]
-                value = fire_rating_param_dict.get("value")
-                if value and "REI" in str(value):
-                    fire_rated_walls.append(el)
-            except (AttributeError, KeyError):
-                continue
-    
-    print(f"Found {len(fire_rated_walls)} fire-rated walls.", flush=True)
-    if not fire_rated_walls:
-        return []
-
-    penetration_errors = []
-    # Cerchiamo le porte/finestre in tutto il modello
     for el in all_elements:
         category = getattr(el, 'category', '')
         if any(target.lower() in category.lower() for target in OPENING_CATEGORIES):
+            print(f"\n-> Found target opening {el.id} (Category: {category})", flush=True)
+            
             try:
-                # --- SOLUZIONE APPLICATA QUI ---
-                # Cerchiamo il parametro in modo robusto, senza dare per scontato il gruppo.
                 properties = getattr(el, 'properties')
                 revit_parameters = properties['Parameters']
                 instance_params = revit_parameters['Instance Parameters']
                 
-                seal_param_found = False
-                seal_param_value = None
-
-                # Iteriamo su tutti i gruppi di parametri di istanza
+                param_object = None
+                # Iteriamo su tutti i gruppi per trovare il nostro parametro
                 for group_name, group_content in instance_params.items():
-                    if isinstance(group_content, dict):
-                        # Controlliamo se il nostro parametro è in questo gruppo
-                        if FIRE_SEAL_PARAM in group_content:
-                            seal_param_found = True
-                            seal_param_dict = group_content[FIRE_SEAL_PARAM]
-                            seal_param_value = seal_param_dict.get("value")
-                            break # Trovato! Usciamo dal loop.
+                    if isinstance(group_content, dict) and FIRE_SEAL_PARAM in group_content:
+                        param_object = group_content[FIRE_SEAL_PARAM]
+                        print(f"   SUCCESS: Found '{FIRE_SEAL_PARAM}' parameter object in group '{group_name}'.", flush=True)
+                        break
                 
-                if not seal_param_found or not seal_param_value:
-                    raise ValueError("Fire seal parameter is missing or set to 'No'.")
+                if not param_object:
+                    raise ValueError(f"'{FIRE_SEAL_PARAM}' not found in any instance parameter group.")
+
+                # --- ISPEZIONE FINALE ---
+                print("   --- INSPECTING THE PARAMETER OBJECT ---", flush=True)
+                print(f"   Parameter Object Type: {type(param_object)}", flush=True)
+                print("   Available attributes and methods:", flush=True)
+                
+                # Usiamo dir() per ottenere una "radiografia" completa dell'oggetto.
+                for attr in dir(param_object):
+                    print(f"     - {attr}", flush=True)
+
+                # Proviamo a vedere se ha un attributo 'value' e stampiamolo.
+                final_value = getattr(param_object, 'value', "ATTRIBUTE 'value' NOT FOUND")
+                print(f"   Attempting to get '.value': {final_value}", flush=True)
+                
+                # Proviamo anche a leggerlo come un dizionario
+                try:
+                    dict_value = param_object.get("value")
+                    print(f"   Attempting to get .get('value'): {dict_value}", flush=True)
+                except Exception:
+                    print("   Attempting to get .get('value'): FAILED", flush=True)
+
+                print("   --------------------------------------", flush=True)
+                # Usciamo dopo aver ispezionato il primo oggetto.
+                return []
 
             except (AttributeError, KeyError, ValueError) as e:
-                print(f"ERROR (Rule 3): Opening {el.id} failed validation. Reason: {e}", flush=True)
-                penetration_errors.append(el)
+                print(f"   DIAGNOSTIC FAILED for element {el.id}: {e}", flush=True)
+                continue
 
-    if penetration_errors:
-        ctx.attach_error_to_objects(
-            category="Unsealed Fire Penetration",
-            affected_objects=penetration_errors,
-            message=f"This opening in a fire-rated wall is missing the '{FIRE_SEAL_PARAM}' parameter.",
-            visual_overrides={"color": "#FF8C00"} # Arancione scuro
-        )
-    
-    print(f"Rule #3 Finished. {len(penetration_errors)} errors found.", flush=True)
-    return penetration_errors
+    print("No openings (Doors/Windows) found in the commit.", flush=True)
+    return []
 
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
@@ -148,7 +93,7 @@ def main(ctx: AutomationContext) -> None:
     """
     Funzione principale che orchestra l'esecuzione di tutte le regole di validazione.
     """
-    print("--- STARTING VALIDATION SCRIPT ---", flush=True)
+    print("--- STARTING FINAL DIAGNOSTIC SCRIPT ---", flush=True)
     
     try:
         commit_root_object = ctx.receive_version()
@@ -160,21 +105,16 @@ def main(ctx: AutomationContext) -> None:
 
         print(f"Found {len(all_elements)} total elements to analyze.", flush=True)
 
-        all_errors = []
-        all_errors.extend(run_fire_rating_check(all_elements, ctx))
-        all_errors.extend(run_penetration_check(all_elements, ctx))
+        run_penetration_check_diagnostic(all_elements, ctx)
         
-        if all_errors:
-            ctx.mark_run_failed(f"Validation failed with a total of {len(all_errors)} errors.")
-        else:
-            ctx.mark_run_success("Validation passed: All rules were successful.")
+        ctx.mark_run_success("Diagnostic complete. Check logs for details.")
 
     except Exception as e:
         error_message = f"An error occurred during the script execution: {e}"
         print(error_message, flush=True)
         ctx.mark_run_failed(error_message)
 
-    print("--- VALIDATION SCRIPT FINISHED ---", flush=True)
+    print("--- END OF FINAL DIAGNOSTIC SCRIPT ---", flush=True)
 
 if __name__ == "__main__":
     execute_automate_function(main)
