@@ -7,8 +7,8 @@ from speckle_automate import AutomationContext, execute_automate_function
 
 #============== CONFIGURAZIONE GLOBALE ===============================================
 # ❗ INSERISCI QUI LE TUE CHIAVI!
-GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
-WEBHOOK_URL = "https://webhook.site/7787200c-ab85-499c-9a90-5416a2fbd072"
+GEMINI_API_KEY = "LA_TUA_CHIAVE_API_DI_GEMINI"
+WEBHOOK_URL = "IL_TUO_URL_DA_WEBHOOK.SITE"
 
 # --- Regole ---
 TARGET_CATEGORIES_RULE_1 = ["Muri", "Pavimenti"]
@@ -75,13 +75,15 @@ def send_webhook_notification(ctx: AutomationContext, error_category: str, faile
 
     print("Sending webhook notification...", flush=True)
     
-    commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{ctx.automation_run_data.model_id}@{ctx.automation_run_data.version_id}"
+    # --- CORREZIONE APPLICATA QUI ---
+    # Il nome corretto della proprietà è 'stream_id', non 'model_id'.
+    commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{ctx.automation_run_data.stream_id}@{ctx.automation_run_data.version_id}"
     
     message = {
         "alert_type": "Speckle Automation Alert",
         "error_category": error_category,
         "project_id": ctx.automation_run_data.project_id,
-        "model_id": ctx.automation_run_data.model_id,
+        "model_id": ctx.automation_run_data.stream_id,
         "failed_elements_count": len(failed_elements),
         "ai_suggestion": ai_suggestion,
         "link_to_commit": commit_url
