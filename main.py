@@ -6,7 +6,9 @@ from speckle_automate import AutomationContext, execute_automate_function
 
 #============== CONFIGURAZIONE GLOBALE ===============================================
 OPENING_CATEGORIES = ["Porte", "Finestre"] 
-FIRE_SEAL_PARAM = "Sigillatura_Rei_Installation"
+# --- CORREZIONE APPLICATA QUI ---
+# Usiamo il nome del parametro in inglese, come concordato.
+FIRE_SEAL_PARAM = "FireSealInstalled"
 PARAMETER_GROUP = "Testo"
 #=====================================================================================
 
