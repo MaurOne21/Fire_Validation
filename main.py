@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante con la Regola #1 (Censimento Antincendio)
-# e la Regola #3 (Integrità Compartimentazioni), con logica di accesso ai dati robusta.
+# e la Regola #3 (Integrità Compartimentazioni), con la logica corretta.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -12,7 +12,8 @@ PARAMETER_GROUP_RULE_1 = "Testo"
 
 # --- Regola #3 ---
 OPENING_CATEGORIES = ["Porte", "Finestre"] 
-FIRE_SEAL_PARAM = "Sigillatura_Rei_Installation"
+FIRE_SEAL_PARAM = "Sigillatura_REI_Installation"
+# NOTA: Aggiornato con il gruppo corretto per il parametro della sigillatura
 PARAMETER_GROUP_RULE_3 = "Altro"
 #=====================================================================================
 
@@ -71,7 +72,7 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
     return validation_errors
 
 
-#============== LOGICA DELLA REGOLA #3 (CORRETTA E ROBUSTA) ===========================
+#============== LOGICA DELLA REGOLA #3 (CORRETTA) ======================================
 def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
     """
     Esegue la Regola #3: Controlla che tutte le porte/finestre nei muri REI
@@ -80,7 +81,6 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
     print("--- RUNNING RULE #3: FIRE COMPARTMENTATION CHECK ---", flush=True)
     
     # Per questa demo, assumiamo che se ci sono muri REI, tutte le porte devono essere controllate.
-    # Un'implementazione più avanzata controllerebbe l'intersezione geometrica.
     
     penetration_errors = []
     # Cerchiamo le porte/finestre in tutto il modello
@@ -88,18 +88,20 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
         category = getattr(el, 'category', '')
         if any(target.lower() in category.lower() for target in OPENING_CATEGORIES):
             try:
-                # --- SOLUZIONE ROBUSTA APPLICATA QUI ---
-                # Usiamo .get() a ogni livello per gestire in modo sicuro le differenze
-                # nella struttura dei dati tra i vari oggetti porta.
-                properties = getattr(el, 'properties', {})
-                revit_parameters = properties.get('Parameters', {})
-                instance_params = revit_parameters.get('Instance Parameters', {})
-                other_group = instance_params.get(PARAMETER_GROUP_RULE_3, {})
-                seal_param_dict = other_group.get(FIRE_SEAL_PARAM)
+                # --- SOLUZIONE APPLICATA QUI ---
+                # Cerchiamo il parametro nel percorso corretto: properties -> Parameters -> Instance Parameters -> Altro
+                properties = getattr(el, 'properties')
+                revit_parameters = properties['Parameters']
+                instance_params = revit_parameters['Instance Parameters']
+                other_group = instance_params[PARAMETER_GROUP_RULE_3]
+                seal_param_dict = other_group[FIRE_SEAL_PARAM]
                 
-                value = seal_param_dict.get("value") if seal_param_dict else None
+                value = seal_param_dict.get("value")
                 
-                if not value: # Fallisce se il valore è None, False (per i Sì/No), o vuoto
+                # Un parametro Sì/No in Revit viene tradotto in True/False (boolean) in Python.
+                # La condizione 'if not value' cattura sia il caso in cui il valore è False,
+                # sia il caso in cui il parametro non esiste (None).
+                if not value: 
                     raise ValueError("Fire seal parameter is missing or set to 'No'.")
 
             except (AttributeError, KeyError, ValueError) as e:
