@@ -1,6 +1,6 @@
 # main.py
 # Versione funzionante con la Regola #1 (Censimento Antincendio)
-# e la Regola #2 (Workflow di Approvazione Demolizioni), con la chiamata API corretta.
+# e la nuova Regola #3 (Integrità Compartimentazioni).
 
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -10,15 +10,11 @@ TARGET_CATEGORIES_RULE_1 = ["Muri", "Pavimenti"]
 FIRE_RATING_PARAM = "Fire_Rating"
 PARAMETER_GROUP = "Testo"
 
-# --- Regola #2 ---
-# NOTA: Sostituisci questo con l'ID reale del tuo stream strutturale!
-STRUCTURAL_STREAM_ID = "d48a1d3b3c" 
-# NOTA: Assicurati che questo sia il nome del branch del tuo modello strutturale!
-STRUCTURAL_BRANCH_NAME = "main"
-# NOTA: Questo deve corrispondere al nome del parametro in Revit
-PHASE_DEMOLISHED_PARAM = "Fase di demolizione"
-# Categorie strutturali da considerare portanti
-STRUCTURAL_CATEGORIES = ["Muri", "Pilastri", "Travi", "Structural Framing", "Structural Columns"]
+# --- Regola #3 ---
+TARGET_CATEGORIES_RULE_3 = ["Muri"]
+OPENING_TYPES = ["Opening", "Door", "Window"] # Tipi di oggetti che rappresentano fori
+# NOTA: Aggiornato con il nome corretto del parametro
+FIRE_SEAL_PARAM = "Sigillatura_Rei_Installation"
 #=====================================================================================
 
 
@@ -76,84 +72,68 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
     return validation_errors
 
 
-#============== LOGICA DELLA REGOLA #2 (CORRETTA) ======================================
-def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
+#============== LOGICA DELLA REGOLA #3 (NUOVA!) ======================================
+def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
     """
-    Esegue la Regola #2: Controlla se un elemento in fase di demolizione
-    interseca un elemento portante.
+    Esegue la Regola #3: Controlla che tutti i fori nei muri REI
+    abbiano la sigillatura specificata.
     """
-    print("--- RUNNING RULE #2: DEMOLITION APPROVAL WORKFLOW ---", flush=True)
+    print("--- RUNNING RULE #3: FIRE COMPARTMENTATION CHECK ---", flush=True)
     
-    # 1. Otteniamo il modello strutturale più recente.
-    try:
-        # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
-        # Costruiamo la query GraphQL come una singola stringa per evitare
-        # problemi di formattazione (spazi, newline) che causano l'errore "Not an AST Node".
-        raw_query = f"""
-            query GetLatestCommit {{
-              project(id: "{ctx.automation_run_data.project_id}") {{
-                model(id: "{STRUCTURAL_STREAM_ID}") {{
-                  branch(name: "{STRUCTURAL_BRANCH_NAME}") {{
-                    commits(limit: 1) {{
-                      items {{
-                        id
-                      }}
-                    }}
-                  }}
-                }}
-              }}
-            }}
-        """
-        # Pulisce la query da spazi multipli, newline e tabulazioni.
-        clean_query = " ".join(raw_query.split())
-        
-        response = ctx.speckle_client.execute_query(query=clean_query)
-        latest_commit_id = response["data"]["project"]["model"]["branch"]["commits"]["items"][0]["id"]
-        
-        structural_root_object = ctx.receive_version(latest_commit_id)
-        structural_elements = find_all_elements(structural_root_object)
-        print(f"Successfully loaded {len(structural_elements)} elements from the structural model.", flush=True)
-    except Exception as e:
-        print(f"ERROR (Rule 2): Could not load the structural model. Reason: {e}", flush=True)
-        return []
-
-    # 2. Filtriamo gli elementi strutturali per trovare solo quelli portanti.
-    load_bearing_elements = []
-    for el in structural_elements:
-        category = getattr(el, 'category', '')
-        if any(target.lower() in category.lower() for target in STRUCTURAL_CATEGORIES):
-            load_bearing_elements.append(el)
-    
-    print(f"Found {len(load_bearing_elements)} load-bearing elements.", flush=True)
-
-    # 3. Troviamo gli elementi architettonici in fase di demolizione.
-    demolished_elements = []
+    fire_rated_walls = []
     for el in all_elements:
-        try:
-            properties = getattr(el, 'properties')
-            revit_parameters = properties['Parameters']
-            instance_params = revit_parameters['Instance Parameters']
-            fasi_group = instance_params.get("Fasi", {})
-            phase_demolished = fasi_group.get(PHASE_DEMOLISHED_PARAM, {})
-            
-            if phase_demolished.get("value") and phase_demolished.get("value") != "Nessuno":
-                demolished_elements.append(el)
-        except (AttributeError, KeyError):
-            continue
+        category = getattr(el, 'category', '')
+        if any(target.lower() in category.lower() for target in TARGET_CATEGORIES_RULE_3):
+            try:
+                properties = getattr(el, 'properties')
+                revit_parameters = properties['Parameters']
+                instance_params = revit_parameters['Instance Parameters']
+                text_group = instance_params[PARAMETER_GROUP]
+                fire_rating_param_dict = text_group[FIRE_RATING_PARAM]
+                value = fire_rating_param_dict.get("value")
+                if value and "REI" in str(value):
+                    fire_rated_walls.append(el)
+            except (AttributeError, KeyError):
+                continue
     
-    print(f"Found {len(demolished_elements)} demolished elements in the current commit.", flush=True)
+    print(f"Found {len(fire_rated_walls)} fire-rated walls.", flush=True)
 
-    # 4. Per ora, ci limitiamo a segnalare gli elementi demoliti.
-    if demolished_elements:
-        ctx.attach_warning_to_objects(
-            category="Structural Demolition Review",
-            affected_objects=demolished_elements,
-            message="This element is set to be demolished. Please ensure this does not affect a load-bearing element.",
-            visual_overrides={"color": "orange"}
+    penetration_errors = []
+    for wall in fire_rated_walls:
+        # I fori sono spesso in una lista 'elements' o '@elements' del muro stesso
+        openings = getattr(wall, 'elements', [])
+        if not openings:
+            openings = getattr(wall, '@elements', [])
+
+        for opening in openings:
+            speckle_type = getattr(opening, 'speckle_type', '')
+            if any(target.lower() in speckle_type.lower() for target in OPENING_TYPES):
+                try:
+                    properties = getattr(opening, 'properties')
+                    revit_parameters = properties['Parameters']
+                    instance_params = revit_parameters['Instance Parameters']
+                    
+                    # I parametri custom potrebbero non essere in un gruppo specifico
+                    seal_param = instance_params.get(FIRE_SEAL_PARAM)
+                    
+                    value = seal_param.get("value") if seal_param else None
+                    if not value: # Fallisce se il valore è None, False, o vuoto
+                        raise ValueError("Fire seal parameter is missing or False.")
+
+                except (AttributeError, KeyError, ValueError) as e:
+                    print(f"ERROR (Rule 3): Opening {opening.id} in wall {wall.id} failed validation. Reason: {e}", flush=True)
+                    penetration_errors.append(opening)
+
+    if penetration_errors:
+        ctx.attach_error_to_objects(
+            category="Unsealed Fire Penetration",
+            affected_objects=penetration_errors,
+            message=f"This opening in a fire-rated wall is missing the '{FIRE_SEAL_PARAM}' parameter.",
+            visual_overrides={"color": "#FF8C00"} # Arancione scuro
         )
     
-    print(f"Rule #2 Finished. {len(demolished_elements)} demolished elements found.", flush=True)
-    return []
+    print(f"Rule #3 Finished. {len(penetration_errors)} errors found.", flush=True)
+    return penetration_errors
 
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
@@ -175,7 +155,7 @@ def main(ctx: AutomationContext) -> None:
 
         all_errors = []
         all_errors.extend(run_fire_rating_check(all_elements, ctx))
-        all_errors.extend(run_demolition_check(all_elements, ctx))
+        all_errors.extend(run_penetration_check(all_elements, ctx))
         
         if all_errors:
             ctx.mark_run_failed(f"Validation failed with a total of {len(all_errors)} errors.")
