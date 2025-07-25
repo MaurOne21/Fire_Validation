@@ -1,26 +1,25 @@
 # main.py
-# Versione funzionante con la Regola #1 (Censimento Antincendio)
-# e la Regola #3 (Integrità Compartimentazioni), con la logica corretta.
+# Fully functional version with Rule #1 (Fire Rating Census)
+# and Rule #3 (Compartmentation Integrity), with the final correct logic.
 
 from speckle_automate import AutomationContext, execute_automate_function
 
 #============== CONFIGURAZIONE GLOBALE ===============================================
-# --- Regola #1 ---
+# --- Rule #1 ---
 TARGET_CATEGORIES_RULE_1 = ["Muri", "Pavimenti"]
 FIRE_RATING_PARAM = "Fire_Rating"
 PARAMETER_GROUP_RULE_1 = "Testo"
 
-# --- Regola #3 ---
+# --- Rule #3 ---
 OPENING_CATEGORIES = ["Porte", "Finestre"] 
-FIRE_SEAL_PARAM = "Sigillatura_REI_Installation"
-# NOTA: Aggiornato con il gruppo corretto per il parametro della sigillatura
+FIRE_SEAL_PARAM = "Sigillatura_Rei_Installation"
 PARAMETER_GROUP_RULE_3 = "Altro"
 #=====================================================================================
 
 
 def find_all_elements(base_object) -> list:
     """
-    Cerca ricorsivamente in un oggetto Speckle tutti gli elementi.
+    Recursively searches a Speckle object for all elements.
     """
     all_elements = []
     elements_property = getattr(base_object, 'elements', None)
@@ -38,8 +37,8 @@ def find_all_elements(base_object) -> list:
 #============== LOGICA DELLA REGOLA #1 (FUNZIONANTE) =================================
 def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
     """
-    Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
-    il parametro 'Fire_Rating' compilato.
+    Executes Rule #1: Verifies that all Walls and Floors
+    have the 'Fire_Rating' parameter filled out.
     """
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
     
@@ -75,32 +74,31 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
 #============== LOGICA DELLA REGOLA #3 (CORRETTA) ======================================
 def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
     """
-    Esegue la Regola #3: Controlla che tutte le porte/finestre nei muri REI
-    abbiano la sigillatura specificata.
+    Executes Rule #3: Checks that all doors/windows in fire-rated walls
+    have the specified fire sealing.
     """
     print("--- RUNNING RULE #3: FIRE COMPARTMENTATION CHECK ---", flush=True)
     
-    # Per questa demo, assumiamo che se ci sono muri REI, tutte le porte devono essere controllate.
+    # For this demo, we assume that if there are fire-rated walls, all doors must be checked.
     
     penetration_errors = []
-    # Cerchiamo le porte/finestre in tutto il modello
+    # Search for doors/windows throughout the model
     for el in all_elements:
         category = getattr(el, 'category', '')
         if any(target.lower() in category.lower() for target in OPENING_CATEGORIES):
             try:
-                # --- SOLUZIONE APPLICATA QUI ---
-                # Cerchiamo il parametro nel percorso corretto: properties -> Parameters -> Instance Parameters -> Altro
+                # --- FINAL SOLUTION APPLIED HERE ---
+                # We search for the parameter in the correct path: properties -> Parameters -> Instance Parameters -> Altro
                 properties = getattr(el, 'properties')
                 revit_parameters = properties['Parameters']
                 instance_params = revit_parameters['Instance Parameters']
                 other_group = instance_params[PARAMETER_GROUP_RULE_3]
                 seal_param_dict = other_group[FIRE_SEAL_PARAM]
                 
+                # A Yes/No parameter in Revit is translated to a boolean True/False in Python.
+                # The condition 'if not value' catches both the case where the value is False,
+                # and the case where the parameter is missing (None).
                 value = seal_param_dict.get("value")
-                
-                # Un parametro Sì/No in Revit viene tradotto in True/False (boolean) in Python.
-                # La condizione 'if not value' cattura sia il caso in cui il valore è False,
-                # sia il caso in cui il parametro non esiste (None).
                 if not value: 
                     raise ValueError("Fire seal parameter is missing or set to 'No'.")
 
@@ -113,7 +111,7 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
             category="Unsealed Fire Penetration",
             affected_objects=penetration_errors,
             message=f"This opening in a fire-rated wall is missing the '{FIRE_SEAL_PARAM}' parameter.",
-            visual_overrides={"color": "#FF8C00"} # Arancione scuro
+            visual_overrides={"color": "#FF8C00"} # Dark Orange
         )
     
     print(f"Rule #3 Finished. {len(penetration_errors)} errors found.", flush=True)
@@ -123,7 +121,7 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
     """
-    Funzione principale che orchestra l'esecuzione di tutte le regole di validazione.
+    Main function that orchestrates the execution of all validation rules.
     """
     print("--- STARTING VALIDATION SCRIPT ---", flush=True)
     
