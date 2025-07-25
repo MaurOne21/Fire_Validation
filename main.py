@@ -86,24 +86,26 @@ def run_demolition_check(all_elements: list, ctx: AutomationContext) -> list:
     
     # 1. Otteniamo il modello strutturale più recente.
     try:
-        # La query GraphQL per ottenere l'ID dell'ultimo commit
-        query = f"""query GetLatestCommit {{
-  project(id: "{ctx.automation_run_data.project_id}") {{
-    model(id: "{STRUCTURAL_STREAM_ID}") {{
-      branch(name: "{STRUCTURAL_BRANCH_NAME}") {{
-        commits(limit: 1) {{
-          items {{
-            id
-          }}
-        }}
-      }}
-    }}
-  }}
-}}"""
+        # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
+        # Costruiamo la query GraphQL come una singola stringa per evitare
+        # problemi di formattazione (spazi, newline) che causano l'errore "Not an AST Node".
+        query = (
+            "query GetLatestCommit {"
+            f'project(id: "{ctx.automation_run_data.project_id}") {{'
+            f'model(id: "{STRUCTURAL_STREAM_ID}") {{'
+            f'branch(name: "{STRUCTURAL_BRANCH_NAME}") {{'
+            "commits(limit: 1) {"
+            "items {"
+            "id"
+            "}"
+            "}"
+            "}"
+            "}"
+            "}"
+            "}"
+        )
         
-        # --- SOLUZIONE APPLICATA QUI ---
-        # Usiamo .strip() per rimuovere ogni spazio o newline extra prima di inviare la query.
-        response = ctx.speckle_client.execute_query(query=query.strip())
+        response = ctx.speckle_client.execute_query(query=query)
         latest_commit_id = response["data"]["project"]["model"]["branch"]["commits"]["items"][0]["id"]
         
         structural_root_object = ctx.receive_version(latest_commit_id)
