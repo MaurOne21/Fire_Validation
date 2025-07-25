@@ -14,8 +14,6 @@ PARAMETER_GROUP_RULE_1 = "Testo"
 TARGET_CATEGORIES_RULE_3 = ["Muri"]
 OPENING_CATEGORIES = ["Porte", "Finestre"] 
 FIRE_SEAL_PARAM = "Sigillatura_Rei_Installation"
-# NOTA: Aggiornato con il gruppo corretto per il parametro della sigillatura
-PARAMETER_GROUP_RULE_3 = "Altro"
 #=====================================================================================
 
 
@@ -108,15 +106,25 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
         if any(target.lower() in category.lower() for target in OPENING_CATEGORIES):
             try:
                 # --- SOLUZIONE APPLICATA QUI ---
-                # Cerchiamo il parametro nel percorso corretto: properties -> Parameters -> Instance Parameters -> Altro
+                # Cerchiamo il parametro in modo robusto, senza dare per scontato il gruppo.
                 properties = getattr(el, 'properties')
                 revit_parameters = properties['Parameters']
                 instance_params = revit_parameters['Instance Parameters']
-                other_group = instance_params[PARAMETER_GROUP_RULE_3]
-                seal_param_dict = other_group[FIRE_SEAL_PARAM]
                 
-                value = seal_param_dict.get("value")
-                if not value: # Fallisce se il valore è None, False (per i Sì/No), o vuoto
+                seal_param_found = False
+                seal_param_value = None
+
+                # Iteriamo su tutti i gruppi di parametri di istanza
+                for group_name, group_content in instance_params.items():
+                    if isinstance(group_content, dict):
+                        # Controlliamo se il nostro parametro è in questo gruppo
+                        if FIRE_SEAL_PARAM in group_content:
+                            seal_param_found = True
+                            seal_param_dict = group_content[FIRE_SEAL_PARAM]
+                            seal_param_value = seal_param_dict.get("value")
+                            break # Trovato! Usciamo dal loop.
+                
+                if not seal_param_found or not seal_param_value:
                     raise ValueError("Fire seal parameter is missing or set to 'No'.")
 
             except (AttributeError, KeyError, ValueError) as e:
