@@ -1,6 +1,5 @@
 # main.py
-# Script di diagnosi definitiva per ispezionare la struttura dell'oggetto parametro
-# 'Sigillatura_Rei_Installation' di una porta.
+# Script di diagnosi definitiva per ispezionare la struttura completa dei parametri di una porta.
 
 import inspect
 from speckle_automate import AutomationContext, execute_automate_function
@@ -31,7 +30,7 @@ def find_all_elements(base_object) -> list:
 #============== DIAGNOSI PER LA REGOLA #3 ===========================================
 def run_penetration_check_diagnostic(all_elements: list, ctx: AutomationContext) -> list:
     """
-    Esegue una diagnosi sulla struttura del parametro 'Sigillatura_Rei_Installation'.
+    Esegue una diagnosi sulla struttura completa dei parametri della prima apertura trovata.
     """
     print("--- RUNNING DIAGNOSTIC FOR RULE #3 ---", flush=True)
     
@@ -42,39 +41,30 @@ def run_penetration_check_diagnostic(all_elements: list, ctx: AutomationContext)
             
             try:
                 properties = getattr(el, 'properties')
-                revit_parameters = properties['Parameters']
-                instance_params = revit_parameters['Instance Parameters']
+                revit_parameters = properties.get('Parameters', {})
                 
-                param_object = None
-                # Iteriamo su tutti i gruppi per trovare il nostro parametro
-                for group_name, group_content in instance_params.items():
-                    if isinstance(group_content, dict) and FIRE_SEAL_PARAM in group_content:
-                        param_object = group_content[FIRE_SEAL_PARAM]
-                        print(f"   SUCCESS: Found '{FIRE_SEAL_PARAM}' parameter object in group '{group_name}'.", flush=True)
-                        break
-                
-                if not param_object:
-                    raise ValueError(f"'{FIRE_SEAL_PARAM}' not found in any instance parameter group.")
+                # --- ISPEZIONE FINALE E COMPLETA ---
+                print("   --- INSPECTING INSTANCE PARAMETERS ---", flush=True)
+                instance_params = revit_parameters.get('Instance Parameters', {})
+                if instance_params:
+                    for group_name, group_content in instance_params.items():
+                        print(f"     - Group: {group_name}", flush=True)
+                        if isinstance(group_content, dict):
+                            for param_name in group_content.keys():
+                                print(f"       - Param: {param_name}", flush=True)
+                else:
+                    print("     No Instance Parameters found.", flush=True)
 
-                # --- ISPEZIONE FINALE ---
-                print("   --- INSPECTING THE PARAMETER OBJECT ---", flush=True)
-                print(f"   Parameter Object Type: {type(param_object)}", flush=True)
-                print("   Available attributes and methods:", flush=True)
-                
-                # Usiamo dir() per ottenere una "radiografia" completa dell'oggetto.
-                for attr in dir(param_object):
-                    print(f"     - {attr}", flush=True)
-
-                # Proviamo a vedere se ha un attributo 'value' e stampiamolo.
-                final_value = getattr(param_object, 'value', "ATTRIBUTE 'value' NOT FOUND")
-                print(f"   Attempting to get '.value': {final_value}", flush=True)
-                
-                # Proviamo anche a leggerlo come un dizionario
-                try:
-                    dict_value = param_object.get("value")
-                    print(f"   Attempting to get .get('value'): {dict_value}", flush=True)
-                except Exception:
-                    print("   Attempting to get .get('value'): FAILED", flush=True)
+                print("\n   --- INSPECTING TYPE PARAMETERS ---", flush=True)
+                type_params = revit_parameters.get('Type Parameters', {})
+                if type_params:
+                    for group_name, group_content in type_params.items():
+                        print(f"     - Group: {group_name}", flush=True)
+                        if isinstance(group_content, dict):
+                            for param_name in group_content.keys():
+                                print(f"       - Param: {param_name}", flush=True)
+                else:
+                    print("     No Type Parameters found.", flush=True)
 
                 print("   --------------------------------------", flush=True)
                 # Usciamo dopo aver ispezionato il primo oggetto.
