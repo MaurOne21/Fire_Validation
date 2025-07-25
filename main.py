@@ -7,8 +7,8 @@ from speckle_automate import AutomationContext, execute_automate_function
 
 #============== CONFIGURAZIONE GLOBALE ===============================================
 # ❗ INSERISCI QUI LE TUE CHIAVI!
-GEMINI_API_KEY = "LA_TUA_CHIAVE_API_DI_GEMINI"
-WEBHOOK_URL = "IL_TUO_URL_DA_WEBHOOK.SITE"
+GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
+WEBHOOK_URL = "https://webhook.site/7787200c-ab85-499c-9a90-5416a2fbd072"
 
 # --- Regole ---
 TARGET_CATEGORIES_RULE_1 = ["Muri", "Pavimenti"]
