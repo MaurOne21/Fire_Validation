@@ -1,6 +1,6 @@
 # main.py
-# Versione completa e funzionante con integrazione AI per le Regole #1 e #3.
-# AGGIORNAMENTO: Corretto il formato del messaggio per il webhook di Discord.
+# Versione finale e pulita con integrazione AI per le Regole #1 e #3.
+# L'argomento 'visual_overrides' è stato rimosso come da indicazioni del team di Speckle.
 
 import json
 import requests
@@ -38,7 +38,7 @@ def find_all_elements(base_object) -> list:
 
 
 #============== FUNZIONI DI SUPPORTO PER AI E NOTIFICHE ===============================
-def get_ai_suggestion(error_description: str) -> str:
+def get_ai_suggestion(error_description: str, failed_elements: list) -> str:
     """
     Interroga l'API di Gemini per ottenere un suggerimento basato sulla descrizione dell'errore.
     """
@@ -46,11 +46,16 @@ def get_ai_suggestion(error_description: str) -> str:
         return "AI suggestion not available (API key not configured)."
 
     print("Asking AI for a suggestion...", flush=True)
+    failed_ids = [getattr(el, 'id', 'N/A') for el in failed_elements[:5]]
+    ids_string = ", ".join(failed_ids)
+    
     prompt = (
-        "You are an expert and concise BIM Manager. "
-        "Given the following validation error from a BIM model, "
-        "provide two brief, actionable corrective steps in a markdown bulleted list. "
-        f"Error: '{error_description}'"
+        "Agisci come un Direttore Lavori italiano esperto e molto pratico. "
+        "Dato il seguente problema di validazione rilevato in un modello BIM, "
+        "fornisci due azioni correttive concrete e operative, come se stessi parlando al team in cantiere. "
+        "Sii conciso e usa un formato markdown (lista puntata). "
+        f"Problema: '{error_description}'. "
+        f"ID degli elementi interessati (primi 5): {ids_string}"
     )
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
@@ -82,10 +87,8 @@ def send_webhook_notification(ctx: AutomationContext, error_category: str, faile
     
     commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{model_id}@{version_id}"
     
-    # --- CORREZIONE APPLICATA QUI ---
-    # Discord richiede un campo 'content' anche se si usano gli 'embeds'.
     message = {
-        "content": "New Speckle Automation Alert!", # Aggiunto testo di base
+        "content": "New Speckle Automation Alert!",
         "username": "Speckle Validator",
         "avatar_url": "https://speckle.systems/favicon.ico",
         "embeds": [
@@ -93,11 +96,11 @@ def send_webhook_notification(ctx: AutomationContext, error_category: str, faile
                 "title": f"🚨 Validation Alert: {error_category}",
                 "description": f"A validation rule failed in project **{ctx.automation_run_data.project_id}**.",
                 "url": commit_url,
-                "color": 15158332,  # Rosso
+                "color": 15158332,
                 "fields": [
                     {"name": "Model", "value": f"`{model_id}`", "inline": True},
                     {"name": "Failed Elements", "value": str(len(failed_elements)), "inline": True},
-                    {"name": "🤖 AI Suggested Actions", "value": ai_suggestion, "inline": False},
+                    {"name": "🤖 Site Manager's Advice", "value": ai_suggestion, "inline": False},
                 ],
                 "footer": {"text": f"Commit ID: {version_id}"}
             }
@@ -106,10 +109,7 @@ def send_webhook_notification(ctx: AutomationContext, error_category: str, faile
 
     try:
         response = requests.post(WEBHOOK_URL, json=message)
-        print(f"Webhook response status code: {response.status_code}", flush=True)
-        print(f"Webhook response body: {response.text}", flush=True)
         response.raise_for_status()
-
     except Exception as e:
         print(f"Could not send Discord webhook notification. Reason: {e}", flush=True)
 
@@ -140,7 +140,7 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
 
     if validation_errors:
         error_description = f"{len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
-        ai_suggestion = get_ai_suggestion(error_description)
+        ai_suggestion = get_ai_suggestion(error_description, validation_errors)
         send_webhook_notification(ctx, f"Missing Data: {FIRE_RATING_PARAM}", validation_errors, ai_suggestion)
 
         ctx.attach_error_to_objects(
@@ -181,7 +181,7 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
 
     if penetration_errors:
         error_description = f"{len(penetration_errors)} openings require a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Si')."
-        ai_suggestion = get_ai_suggestion(error_description)
+        ai_suggestion = get_ai_suggestion(error_description, penetration_errors)
         send_webhook_notification(ctx, "Unsealed Fire Penetration", penetration_errors, ai_suggestion)
 
         ctx.attach_error_to_objects(
