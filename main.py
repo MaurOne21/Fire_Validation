@@ -143,14 +143,36 @@ def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> lis
     print("--- RUNNING RULE #4: 5D COST IMPACT ANALYSIS ---", flush=True)
     
     try:
+        trigger_payload = ctx.automation_run_data.triggers[0].payload
+        model_id = trigger_payload.model_id
+        
         # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
-        # Usiamo la funzione ufficiale 'get_previous_version' per ottenere il commit precedente.
-        # Questo approccio è più robusto e non richiede di costruire query manuali.
-        previous_version = ctx.get_previous_version()
-        if not previous_version:
+        # Costruiamo la query GraphQL come una singola stringa su una riga
+        # per evitare qualsiasi problema di formattazione.
+        query = (
+            'query GetPreviousCommit {'
+            f'project(id: "{ctx.automation_run_data.project_id}") {{'
+            f'model(id: "{model_id}") {{'
+            'branch(name: "main") {'
+            'commits(limit: 2) {'
+            'items { id }'
+            '}'
+            '}'
+            '}'
+            '}'
+            '}'
+        )
+        
+        response = ctx.speckle_client.execute_query(query=query)
+        
+        commits = response["data"]["project"]["model"]["branch"]["commits"]["items"]
+        
+        if len(commits) < 2:
             print("Not enough versions to compare. Skipping cost impact analysis.", flush=True)
             return []
-            
+        
+        previous_commit_id = commits[1]["id"]
+        previous_version = ctx.receive_version(previous_commit_id)
         previous_elements = find_all_elements(previous_version)
         
         def calculate_total_cost(elements: list) -> float:
@@ -207,7 +229,7 @@ def main(ctx: AutomationContext) -> None:
         all_elements = find_all_elements(commit_root_object)
 
         if not all_elements:
-            ctx.mark_run_success("No elements found in the commit.")
+            ctx.mark_run_success("No Revit elements found in the commit.")
             return
 
         print(f"Found {len(all_elements)} total elements to analyze.", flush=True)
