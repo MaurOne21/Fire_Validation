@@ -23,26 +23,188 @@ COST_PARAMETER = "Costo_Unitario"
 
 
 def find_all_elements(base_object) -> list:
-    # ... (funzione find_all_elements, omessa per brevità)
-    return []
+    """
+    Cerca ricorsivamente in un oggetto Speckle tutti gli elementi.
+    """
+    all_elements = []
+    elements_property = getattr(base_object, 'elements', None)
+    if not elements_property:
+        elements_property = getattr(base_object, '@elements', None)
+
+    if elements_property and isinstance(elements_property, list):
+        for element in elements_property:
+            all_elements.extend(find_all_elements(element))
+    elif "Collection" not in getattr(base_object, "speckle_type", ""):
+        all_elements.append(base_object)
+    return all_elements
+
 
 #============== FUNZIONI DI SUPPORTO ==================================================
 def get_ai_suggestion(prompt: str) -> str:
-    # ... (funzione get_ai_suggestion, ora più generica, omessa per brevità)
-    return "AI suggestion placeholder"
+    """
+    Interroga l'API di Gemini per ottenere un suggerimento basato su un prompt.
+    """
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "LA_TUA_CHIAVE_API_DI_GEMINI":
+        return "AI suggestion not available (API key not configured)."
+
+    print("Asking AI for a suggestion...", flush=True)
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        result = response.json()
+        suggestion = result["candidates"][0]["content"]["parts"][0]["text"]
+        return suggestion
+    except Exception as e:
+        print(f"Could not get AI suggestion. Reason: {e}", flush=True)
+        return "Could not retrieve AI suggestion at this time."
 
 def send_webhook_notification(ctx: AutomationContext, title: str, description: str, color: int, fields: list):
-    # ... (funzione send_webhook_notification, omessa per brevità)
-    pass
+    """
+    Invia una notifica a un webhook di Discord con un messaggio personalizzato.
+    """
+    if not WEBHOOK_URL or WEBHOOK_URL == "IL_TUO_URL_DEL_WEBHOOK_DI_DISCORD":
+        return
+
+    print("Sending Discord webhook notification...", flush=True)
+    
+    trigger_payload = ctx.automation_run_data.triggers[0].payload
+    model_id = trigger_payload.model_id
+    version_id = trigger_payload.version_id
+    commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{model_id}@{version_id}"
+    
+    message = {
+        "content": "New Speckle Automation Report!",
+        "username": "Speckle Validator",
+        "avatar_url": "https://speckle.systems/favicon.ico",
+        "embeds": [{
+            "title": title,
+            "description": description,
+            "url": commit_url,
+            "color": color,
+            "fields": fields,
+            "footer": {"text": f"Commit ID: {version_id}"}
+        }]
+    }
+
+    try:
+        requests.post(WEBHOOK_URL, json=message)
+    except Exception as e:
+        print(f"Could not send Discord webhook notification. Reason: {e}", flush=True)
+
 
 #============== LOGICA DELLE REGOLE ==================================================
 def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
-    # ... (logica Regola #1 funzionante, omessa per brevità)
-    return []
+    """
+    Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
+    il parametro 'Fire_Rating' compilato.
+    """
+    print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
+    
+    validation_errors = []
+    for el in all_elements:
+        category = getattr(el, 'category', '')
+        if any(target.lower() in category.lower() for target in TARGET_CATEGORIES_RULE_1):
+            try:
+                properties = getattr(el, 'properties')
+                revit_parameters = properties['Parameters']
+                instance_params = revit_parameters['Instance Parameters']
+                text_group = instance_params[PARAMETER_GROUP]
+                fire_rating_param_dict = text_group[FIRE_RATING_PARAM]
+                value = fire_rating_param_dict.get("value")
+                if value is None or not str(value).strip():
+                    raise ValueError("Parameter value is missing or empty.")
+            except (AttributeError, KeyError, ValueError):
+                validation_errors.append(el)
+
+    if validation_errors:
+        error_description = f"{len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
+        ai_prompt = (
+            "Agisci come un Direttore Lavori italiano esperto e molto pratico. "
+            "Dato il seguente problema di validazione rilevato in un modello BIM, "
+            "fornisci due azioni correttive concrete e operative, come se stessi parlando al team in cantiere. "
+            "Sii conciso e usa un formato markdown (lista puntata). "
+            f"Problema: '{error_description}'."
+        )
+        ai_suggestion = get_ai_suggestion(ai_prompt)
+        
+        title = f"🚨 Validation Alert: Missing Data: {FIRE_RATING_PARAM}"
+        description = f"A validation rule failed in project **{ctx.automation_run_data.project_id}**."
+        fields = [
+            {"name": "Model", "value": f"`{ctx.automation_run_data.triggers[0].payload.model_id}`", "inline": True},
+            {"name": "Failed Elements", "value": str(len(validation_errors)), "inline": True},
+            {"name": "🤖 Site Manager's Advice", "value": ai_suggestion, "inline": False},
+        ]
+        send_webhook_notification(ctx, title, description, 15158332, fields)
+
+        ctx.attach_error_to_objects(
+            category=f"Missing Data: {FIRE_RATING_PARAM}",
+            affected_objects=validation_errors,
+            message=f"The parameter '{FIRE_RATING_PARAM}' is missing or empty."
+        )
+    
+    print(f"Rule #1 Finished. {len(validation_errors)} errors found.", flush=True)
+    return validation_errors
 
 def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
-    # ... (logica Regola #3 funzionante, omessa per brevità)
-    return []
+    """
+    Esegue la Regola #3: Controlla che tutte le porte/finestre abbiano
+    la sigillatura specificata.
+    """
+    print("--- RUNNING RULE #3: FIRE COMPARTMENTATION CHECK ---", flush=True)
+    
+    penetration_errors = []
+    for el in all_elements:
+        category = getattr(el, 'category', '')
+        if any(target.lower() in category.lower() for target in OPENING_CATEGORIES):
+            is_sealed = False
+            try:
+                properties = getattr(el, 'properties', {})
+                revit_parameters = properties.get('Parameters', {})
+                instance_params = revit_parameters.get('Instance Parameters', {})
+                text_group = instance_params.get(PARAMETER_GROUP, {})
+                seal_param_dict = text_group.get(FIRE_SEAL_PARAM)
+                if seal_param_dict:
+                    value = seal_param_dict.get("value")
+                    if isinstance(value, str) and value.strip().lower() == "si":
+                        is_sealed = True
+            except Exception as e:
+                print(f"WARNING (Rule 3): Could not parse parameters for opening {el.id}. Reason: {e}", flush=True)
+            if not is_sealed:
+                penetration_errors.append(el)
+
+    if penetration_errors:
+        error_description = f"{len(penetration_errors)} openings require a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Si')."
+        ai_prompt = (
+            "Agisci come un Direttore Lavori italiano esperto e molto pratico. "
+            "Dato il seguente problema di validazione rilevato in un modello BIM, "
+            "fornisci due azioni correttive concrete e operative, come se stessi parlando al team in cantiere. "
+            "Sii conciso e usa un formato markdown (lista puntata). "
+            f"Problema: '{error_description}'."
+        )
+        ai_suggestion = get_ai_suggestion(ai_prompt)
+
+        title = "🚨 Validation Alert: Unsealed Fire Penetration"
+        description = f"A validation rule failed in project **{ctx.automation_run_data.project_id}**."
+        fields = [
+            {"name": "Model", "value": f"`{ctx.automation_run_data.triggers[0].payload.model_id}`", "inline": True},
+            {"name": "Failed Elements", "value": str(len(penetration_errors)), "inline": True},
+            {"name": "🤖 Site Manager's Advice", "value": ai_suggestion, "inline": False},
+        ]
+        send_webhook_notification(ctx, title, description, 15158332, fields)
+
+        ctx.attach_error_to_objects(
+            category="Unsealed Fire Penetration",
+            affected_objects=penetration_errors,
+            message=f"This opening requires a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Si')."
+        )
+    
+    print(f"Rule #3 Finished. {len(penetration_errors)} errors found.", flush=True)
+    return penetration_errors
 
 def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> list:
     """
@@ -84,7 +246,6 @@ def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> lis
             color = 15158332 if cost_delta > 0 else 32768
             delta_sign = "+" if cost_delta > 0 else ""
             
-            # Chiamiamo l'AI per commentare la variazione di costo
             ai_prompt = (
                 "Agisci come un Direttore Lavori esperto. Il costo del progetto è appena cambiato. "
                 f"Il costo precedente era €{previous_cost:.2f}, quello attuale è €{current_cost:.2f}, "
