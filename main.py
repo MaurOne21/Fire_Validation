@@ -1,6 +1,6 @@
 # main.py
 # Versione completa e funzionante con integrazione AI per le Regole #1 e #3.
-# Utilizza la struttura dati corretta per le notifiche scoperta tramite il debug.
+# AGGIORNAMENTO: Aggiunto logging di diagnosi per le notifiche webhook.
 
 import json
 import requests
@@ -76,8 +76,6 @@ def send_webhook_notification(ctx: AutomationContext, error_category: str, faile
 
     print("Sending webhook notification...", flush=True)
     
-    # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
-    # Accediamo ai dati del trigger per ottenere model_id e version_id.
     trigger_payload = ctx.automation_run_data.triggers[0].payload
     model_id = trigger_payload.model_id
     version_id = trigger_payload.version_id
@@ -95,7 +93,15 @@ def send_webhook_notification(ctx: AutomationContext, error_category: str, faile
     }
 
     try:
-        requests.post(WEBHOOK_URL, json=message)
+        # --- BLOCCO DI DIAGNOSI APPLICATO QUI ---
+        response = requests.post(WEBHOOK_URL, json=message)
+        
+        # Stampa la risposta del server del webhook per il debug.
+        print(f"Webhook response status code: {response.status_code}", flush=True)
+        print(f"Webhook response body: {response.text}", flush=True)
+        
+        response.raise_for_status() # Questo causerà un errore se lo status non è 2xx (successo)
+
     except Exception as e:
         print(f"Could not send webhook notification. Reason: {e}", flush=True)
 
