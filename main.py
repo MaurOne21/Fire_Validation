@@ -1,6 +1,6 @@
 # main.py
 # Versione finale e pulita con integrazione AI per le Regole #1 e #3.
-# L'argomento 'visual_overrides' è stato rimosso come da indicazioni del team di Speckle.
+# AGGIORNAMENTO: Aggiunto il troncamento del suggerimento AI per evitare errori di Discord.
 
 import json
 import requests
@@ -87,6 +87,11 @@ def send_webhook_notification(ctx: AutomationContext, error_category: str, faile
     
     commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{model_id}@{version_id}"
     
+    # --- SOLUZIONE APPLICATA QUI ---
+    # Tronchiamo il suggerimento dell'AI a 1000 caratteri per essere sicuri
+    # che rientri nei limiti di Discord (1024 caratteri per campo).
+    truncated_suggestion = (ai_suggestion[:1000] + '...') if len(ai_suggestion) > 1000 else ai_suggestion
+
     message = {
         "content": "New Speckle Automation Alert!",
         "username": "Speckle Validator",
@@ -100,7 +105,7 @@ def send_webhook_notification(ctx: AutomationContext, error_category: str, faile
                 "fields": [
                     {"name": "Model", "value": f"`{model_id}`", "inline": True},
                     {"name": "Failed Elements", "value": str(len(failed_elements)), "inline": True},
-                    {"name": "🤖 Site Manager's Advice", "value": ai_suggestion, "inline": False},
+                    {"name": "🤖 Site Manager's Advice", "value": truncated_suggestion, "inline": False},
                 ],
                 "footer": {"text": f"Commit ID: {version_id}"}
             }
