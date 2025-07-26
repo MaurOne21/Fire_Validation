@@ -125,14 +125,16 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING MASTER VALIDATION SCRIPT ---", flush=True)
+    print("--- STARTING MASTER VALIDATION SCRIPT (COST FOCUS) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
         try:
             with open(prezzario_path, 'r', encoding='utf-8') as f: price_list = json.load(f)
             print("Prezzario 'prezzario.json' caricato.")
-        except Exception as e: print(f"ATTENZIONE: 'prezzario.json' non trovato o illeggibile: {e}")
+        except Exception as e:
+            ctx.mark_run_failed(f"Impossibile caricare 'prezzario.json': {e}")
+            return
 
         commit_root_object = ctx.receive_version()
         all_elements = find_all_elements(commit_root_object)
@@ -142,9 +144,14 @@ def main(ctx: AutomationContext) -> None:
 
         print(f"Trovati {len(all_elements)} elementi totali da analizzare.", flush=True)
         
-        # --- ESECUZIONE DI TUTTE LE REGOLE IN SEQUENZA ---
-        fire_rating_errors = run_fire_rating_check(all_elements)
-        penetration_errors = run_penetration_check(all_elements)
+        # --- ESECUZIONE DELLE REGOLE ---
+        # Per ora commentiamo le regole antincendio per concentrarci sui costi
+        # fire_rating_errors = run_fire_rating_check(all_elements)
+        # penetration_errors = run_penetration_check(all_elements)
+        fire_rating_errors = []
+        penetration_errors = []
+        
+        # Eseguiamo solo la regola dei costi
         cost_warnings = run_ai_cost_check(all_elements, price_list)
         
         total_issues = len(fire_rating_errors) + len(penetration_errors) + len(cost_warnings)
@@ -154,17 +161,20 @@ def main(ctx: AutomationContext) -> None:
             fields = []
             
             # --- AGGREGAZIONE DEI RISULTATI ---
+            # (I blocchi if per gli errori antincendio non verranno eseguiti)
             if fire_rating_errors:
-                fields.append({"name": f"🔥 Dato Antincendio Mancante ({len(fire_rating_errors)} errori)", "value": f"Manca il parametro '{FIRE_RATING_PARAM}' o è vuoto.", "inline": False})
-                ctx.attach_error_to_objects(category=f"Dato Mancante: {FIRE_RATING_PARAM}", affected_objects=fire_rating_errors, message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante o vuoto.")
+                # ...
             
             if penetration_errors:
-                fields.append({"name": f"🔥 Apertura non Sigillata ({len(penetration_errors)} errori)", "value": f"Il parametro '{FIRE_SEAL_PARAM}' non è impostato su 'Si'.", "inline": False})
-                ctx.attach_warning_to_objects(category="Apertura non Sigillata", affected_objects=penetration_errors, message=f"Questa apertura non è sigillata.")
+                # ...
 
             if cost_warnings:
                 fields.append({"name": f"💸 Costo Non Congruo ({len(cost_warnings)} avvisi)", "value": "L'AI ha rilevato costi unitari fuori tolleranza.", "inline": False})
-                ctx.attach_warning_to_objects(category="Costo Non Congruo (AI)", affected_objects=[item[0] for item in cost_warnings], message="Il costo unitario di questo elemento non sembra congruo.")
+                ctx.attach_warning_to_objects(
+                    category="Costo Non Congruo (AI)",
+                    affected_objects=[item[0] for item in cost_warnings],
+                    message="Il costo unitario di questo elemento non sembra congruo."
+                )
 
             ai_prompt = f"Agisci come un Project Manager. Un controllo automatico ha trovato questi problemi: {', '.join([f['name'] for f in fields])}. Riassumi le priorità in una frase."
             ai_suggestion = get_ai_suggestion(ai_prompt)
