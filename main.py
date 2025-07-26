@@ -143,36 +143,14 @@ def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> lis
     print("--- RUNNING RULE #4: 5D COST IMPACT ANALYSIS ---", flush=True)
     
     try:
-        trigger_payload = ctx.automation_run_data.triggers[0].payload
-        model_id = trigger_payload.model_id
-        
         # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
-        # Costruiamo la query GraphQL come una singola stringa su una riga
-        # per evitare qualsiasi problema di formattazione.
-        query = (
-            'query GetPreviousCommit {'
-            f'project(id: "{ctx.automation_run_data.project_id}") {{'
-            f'model(id: "{model_id}") {{'
-            'branch(name: "main") {'
-            'commits(limit: 2) {'
-            'items { id }'
-            '}'
-            '}'
-            '}'
-            '}'
-            '}'
-        )
-        
-        response = ctx.speckle_client.execute_query(query=query)
-        
-        commits = response["data"]["project"]["model"]["branch"]["commits"]["items"]
-        
-        if len(commits) < 2:
+        # Usiamo la funzione ufficiale 'get_previous_version' per ottenere il commit precedente.
+        # Questo approccio è più robusto e non richiede di costruire query manuali.
+        previous_version = ctx.get_previous_version()
+        if not previous_version:
             print("Not enough versions to compare. Skipping cost impact analysis.", flush=True)
             return []
-        
-        previous_commit_id = commits[1]["id"]
-        previous_version = ctx.receive_version(previous_commit_id)
+            
         previous_elements = find_all_elements(previous_version)
         
         def calculate_total_cost(elements: list) -> float:
@@ -212,8 +190,9 @@ def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> lis
 
     except Exception as e:
         print(f"ERROR (Rule 4): Could not run cost impact analysis. Reason: {e}", flush=True)
+        return ["Cost analysis failed"] 
 
-    return []
+    return [] # Questa regola non produce errori bloccanti se ha successo
 
 
 #============== ORCHESTRATORE PRINCIPALE (CORRETTO) =================================
@@ -237,10 +216,12 @@ def main(ctx: AutomationContext) -> None:
         all_errors.extend(run_fire_rating_check(all_elements, ctx))
         all_errors.extend(run_penetration_check(all_elements, ctx))
         
-        run_cost_impact_check(all_elements, ctx)
+        all_errors.extend(run_cost_impact_check(all_elements, ctx))
         
+        all_errors = [e for e in all_errors if e]
+
         if all_errors:
-            ctx.mark_run_failed(f"Validation failed with a total of {len(all_errors)} errors.")
+            ctx.mark_run_failed(f"Validation failed with a total of {len(all_errors)} issues.")
         else:
             ctx.mark_run_success("Validation passed: All rules were successful.")
 
