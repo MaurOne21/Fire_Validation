@@ -11,7 +11,7 @@ PARAMETER_GROUP = "Testo"
 
 # --- Regola #2 (Diagnosi) ---
 # NOTA: Sostituisci questo con l'ID reale del tuo stream strutturale!
-STRUCTURAL_STREAM_ID = "d48a1d3b3c" 
+STRUCTURAL_STREAM_ID = "0894f1e096" 
 #=====================================================================================
 
 
