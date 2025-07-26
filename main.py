@@ -1,6 +1,5 @@
 # main.py
-# Versione finale e pulita con integrazione AI per le Regole #1 e #3.
-# AGGIORNAMENTO: Aggiunto il troncamento del suggerimento AI per evitare errori di Discord.
+# Versione multidisciplinare con Regole #1, #3 e la nuova Regola #4 (Analisi di Impatto 5D).
 
 import json
 import requests
@@ -17,6 +16,9 @@ OPENING_CATEGORIES = ["Porte", "Finestre"]
 FIRE_RATING_PARAM = "Fire_Rating"
 FIRE_SEAL_PARAM = "FireSealInstalled"
 PARAMETER_GROUP = "Testo"
+
+# --- Regola #4 ---
+COST_PARAMETER = "Costo_Unitario"
 #=====================================================================================
 
 
@@ -37,7 +39,7 @@ def find_all_elements(base_object) -> list:
     return all_elements
 
 
-#============== FUNZIONI DI SUPPORTO PER AI E NOTIFICHE ===============================
+#============== FUNZIONI DI SUPPORTO ==================================================
 def get_ai_suggestion(error_description: str, failed_elements: list) -> str:
     """
     Interroga l'API di Gemini per ottenere un suggerimento basato sulla descrizione dell'errore.
@@ -72,9 +74,9 @@ def get_ai_suggestion(error_description: str, failed_elements: list) -> str:
         print(f"Could not get AI suggestion. Reason: {e}", flush=True)
         return "Could not retrieve AI suggestion at this time."
 
-def send_webhook_notification(ctx: AutomationContext, error_category: str, failed_elements: list, ai_suggestion: str):
+def send_webhook_notification(ctx: AutomationContext, title: str, description: str, color: int, fields: list):
     """
-    Invia una notifica a un webhook di Discord con i dettagli dell'errore.
+    Invia una notifica a un webhook di Discord con un messaggio personalizzato.
     """
     if not WEBHOOK_URL or WEBHOOK_URL == "IL_TUO_URL_DEL_WEBHOOK_DI_DISCORD":
         return
@@ -84,42 +86,29 @@ def send_webhook_notification(ctx: AutomationContext, error_category: str, faile
     trigger_payload = ctx.automation_run_data.triggers[0].payload
     model_id = trigger_payload.model_id
     version_id = trigger_payload.version_id
-    
     commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{model_id}@{version_id}"
     
-    # --- SOLUZIONE APPLICATA QUI ---
-    # Tronchiamo il suggerimento dell'AI a 1000 caratteri per essere sicuri
-    # che rientri nei limiti di Discord (1024 caratteri per campo).
-    truncated_suggestion = (ai_suggestion[:1000] + '...') if len(ai_suggestion) > 1000 else ai_suggestion
-
     message = {
-        "content": "New Speckle Automation Alert!",
+        "content": "New Speckle Automation Report!",
         "username": "Speckle Validator",
         "avatar_url": "https://speckle.systems/favicon.ico",
-        "embeds": [
-            {
-                "title": f"🚨 Validation Alert: {error_category}",
-                "description": f"A validation rule failed in project **{ctx.automation_run_data.project_id}**.",
-                "url": commit_url,
-                "color": 15158332,
-                "fields": [
-                    {"name": "Model", "value": f"`{model_id}`", "inline": True},
-                    {"name": "Failed Elements", "value": str(len(failed_elements)), "inline": True},
-                    {"name": "🤖 Site Manager's Advice", "value": truncated_suggestion, "inline": False},
-                ],
-                "footer": {"text": f"Commit ID: {version_id}"}
-            }
-        ]
+        "embeds": [{
+            "title": title,
+            "description": description,
+            "url": commit_url,
+            "color": color,
+            "fields": fields,
+            "footer": {"text": f"Commit ID: {version_id}"}
+        }]
     }
 
     try:
-        response = requests.post(WEBHOOK_URL, json=message)
-        response.raise_for_status()
+        requests.post(WEBHOOK_URL, json=message)
     except Exception as e:
         print(f"Could not send Discord webhook notification. Reason: {e}", flush=True)
 
 
-#============== LOGICA DELLE REGOLE (POTENZIATA) =====================================
+#============== LOGICA DELLE REGOLE ==================================================
 def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
     """
     Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
@@ -146,7 +135,15 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
     if validation_errors:
         error_description = f"{len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
         ai_suggestion = get_ai_suggestion(error_description, validation_errors)
-        send_webhook_notification(ctx, f"Missing Data: {FIRE_RATING_PARAM}", validation_errors, ai_suggestion)
+        
+        title = f"🚨 Validation Alert: Missing Data: {FIRE_RATING_PARAM}"
+        description = f"A validation rule failed in project **{ctx.automation_run_data.project_id}**."
+        fields = [
+            {"name": "Model", "value": f"`{ctx.automation_run_data.triggers[0].payload.model_id}`", "inline": True},
+            {"name": "Failed Elements", "value": str(len(validation_errors)), "inline": True},
+            {"name": "🤖 Site Manager's Advice", "value": ai_suggestion, "inline": False},
+        ]
+        send_webhook_notification(ctx, title, description, 15158332, fields)
 
         ctx.attach_error_to_objects(
             category=f"Missing Data: {FIRE_RATING_PARAM}",
@@ -187,7 +184,15 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
     if penetration_errors:
         error_description = f"{len(penetration_errors)} openings require a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Si')."
         ai_suggestion = get_ai_suggestion(error_description, penetration_errors)
-        send_webhook_notification(ctx, "Unsealed Fire Penetration", penetration_errors, ai_suggestion)
+
+        title = "🚨 Validation Alert: Unsealed Fire Penetration"
+        description = f"A validation rule failed in project **{ctx.automation_run_data.project_id}**."
+        fields = [
+            {"name": "Model", "value": f"`{ctx.automation_run_data.triggers[0].payload.model_id}`", "inline": True},
+            {"name": "Failed Elements", "value": str(len(penetration_errors)), "inline": True},
+            {"name": "🤖 Site Manager's Advice", "value": ai_suggestion, "inline": False},
+        ]
+        send_webhook_notification(ctx, title, description, 15158332, fields)
 
         ctx.attach_error_to_objects(
             category="Unsealed Fire Penetration",
@@ -197,6 +202,75 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
     
     print(f"Rule #3 Finished. {len(penetration_errors)} errors found.", flush=True)
     return penetration_errors
+
+def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> list:
+    """
+    Esegue la Regola #4: Analisi di Impatto 5D. Confronta il commit attuale
+    con il precedente per calcolare la variazione di costi.
+    """
+    print("--- RUNNING RULE #4: 5D COST IMPACT ANALYSIS ---", flush=True)
+    
+    try:
+        # 1. Otteniamo il commit precedente
+        previous_version = ctx.get_previous_version()
+        if not previous_version:
+            print("No previous version found. Skipping cost impact analysis.", flush=True)
+            return []
+            
+        previous_elements = find_all_elements(previous_version)
+        
+        # 2. Calcoliamo il costo totale per entrambe le versioni
+        current_cost = 0
+        for el in current_elements:
+            try:
+                properties = getattr(el, 'properties', {})
+                revit_parameters = properties.get('Parameters', {})
+                instance_params = revit_parameters.get('Instance Parameters', {})
+                text_group = instance_params.get(PARAMETER_GROUP, {})
+                cost_param = text_group.get(COST_PARAMETER, {})
+                unit_cost = cost_param.get("value", 0)
+                
+                volume = getattr(el, 'volume', 0) # Assumiamo che il costo sia per volume
+                current_cost += volume * unit_cost
+            except (AttributeError, KeyError):
+                continue
+
+        previous_cost = 0
+        for el in previous_elements:
+            try:
+                properties = getattr(el, 'properties', {})
+                revit_parameters = properties.get('Parameters', {})
+                instance_params = revit_parameters.get('Instance Parameters', {})
+                text_group = instance_params.get(PARAMETER_GROUP, {})
+                cost_param = text_group.get(COST_PARAMETER, {})
+                unit_cost = cost_param.get("value", 0)
+                
+                volume = getattr(el, 'volume', 0)
+                previous_cost += volume * unit_cost
+            except (AttributeError, KeyError):
+                continue
+        
+        # 3. Calcoliamo il delta e inviamo la notifica
+        cost_delta = current_cost - previous_cost
+        
+        print(f"Cost analysis complete. Previous: €{previous_cost:.2f}, Current: €{current_cost:.2f}, Delta: €{cost_delta:.2f}", flush=True)
+
+        if abs(cost_delta) > 0.01: # Invia notifica solo se c'è una variazione
+            color = 15158332 if cost_delta > 0 else 32768 # Rosso se aumenta, Verde se diminuisce
+            delta_sign = "+" if cost_delta > 0 else ""
+            
+            title = f"💰 Cost Impact Alert: € {delta_sign}{cost_delta:.2f}"
+            description = "A design change has impacted the estimated project cost."
+            fields = [
+                {"name": "Previous Total Cost", "value": f"€ {previous_cost:.2f}", "inline": True},
+                {"name": "New Total Cost", "value": f"€ {current_cost:.2f}", "inline": True},
+            ]
+            send_webhook_notification(ctx, title, description, color, fields)
+
+    except Exception as e:
+        print(f"ERROR (Rule 4): Could not run cost impact analysis. Reason: {e}", flush=True)
+
+    return [] # Questa regola non produce errori bloccanti
 
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
@@ -211,7 +285,7 @@ def main(ctx: AutomationContext) -> None:
         all_elements = find_all_elements(commit_root_object)
 
         if not all_elements:
-            ctx.mark_run_success("No Revit elements found in the commit.")
+            ctx.mark_run_success("No elements found in the commit.")
             return
 
         print(f"Found {len(all_elements)} total elements to analyze.", flush=True)
@@ -219,6 +293,9 @@ def main(ctx: AutomationContext) -> None:
         all_errors = []
         all_errors.extend(run_fire_rating_check(all_elements, ctx))
         all_errors.extend(run_penetration_check(all_elements, ctx))
+        
+        # Eseguiamo la nostra nuova regola di analisi costi
+        run_cost_impact_check(all_elements, ctx)
         
         if all_errors:
             ctx.mark_run_failed(f"Validation failed with a total of {len(all_errors)} errors.")
