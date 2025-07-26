@@ -98,6 +98,16 @@ def main(ctx: AutomationContext) -> None:
         fire_rating_errors = run_fire_rating_check(all_elements)
         penetration_errors = run_penetration_check(all_elements)
         budget_alerts = run_budget_check(all_elements)
+        
+        # --- INIZIO BLOCCO DI DEBUG ---
+# Stampiamo i dettagli del primo muro con errore per analizzarlo
+if fire_rating_errors:
+    print("\n--- DEBUG: ISPEZIONE PRIMO MURO CON ERRORE ---", flush=True)
+    # Usiamo json.dumps per stampare l'oggetto in modo leggibile
+    print(json.dumps(fire_rating_errors[0].to_dict(), indent=2))
+    print("---------------------------------------------\n", flush=True)
+# --- FINE BLOCCO DI DEBUG ---
+        
         total_issues = len(fire_rating_errors) + len(penetration_errors) + len(budget_alerts)
 
         if total_issues > 0:
