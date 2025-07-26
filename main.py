@@ -1,8 +1,8 @@
 # main.py
-# Versione finale con le Regole #1, #3 e la nuova, robusta Regola #4 (Analisi Costi Intelligente).
+# Script di diagnosi definitiva per ispezionare l'oggetto 'AutomationContext' (ctx)
+# e trovare il metodo corretto per ottenere i risultati precedenti.
 
-import json
-import requests
+import inspect
 from speckle_automate import AutomationContext, execute_automate_function
 
 #============== CONFIGURAZIONE GLOBALE ===============================================
@@ -16,11 +16,8 @@ OPENING_CATEGORIES = ["Porte", "Finestre"]
 FIRE_RATING_PARAM = "Fire_Rating"
 FIRE_SEAL_PARAM = "FireSealInstalled"
 PARAMETER_GROUP = "Testo"
-
-# --- Regola #4 ---
 COST_PARAMETER = "Costo_Unitario"
 #=====================================================================================
-
 
 
 def find_all_elements(base_object) -> list:
@@ -40,253 +37,56 @@ def find_all_elements(base_object) -> list:
     return all_elements
 
 
-#============== FUNZIONI DI SUPPORTO ==================================================
-def get_ai_suggestion(prompt: str) -> str:
-    """
-    Interroga l'API di Gemini per ottenere un suggerimento basato su un prompt.
-    """
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "LA_TUA_CHIAVE_API_DI_GEMINI":
-        return "AI suggestion not available (API key not configured)."
-
-    print("Asking AI for a suggestion...", flush=True)
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
-    headers = {"Content-Type": "application/json"}
-    data = {"contents": [{"parts": [{"text": prompt}]}]}
-
-    try:
-        response = requests.post(url, headers=headers, json=data)
-        response.raise_for_status()
-        result = response.json()
-        suggestion = result["candidates"][0]["content"]["parts"][0]["text"]
-        return suggestion
-    except Exception as e:
-        print(f"Could not get AI suggestion. Reason: {e}", flush=True)
-        return "Could not retrieve AI suggestion at this time."
-
+#============== FUNZIONI DI SUPPORTO (PAUSA) =========================================
 def send_webhook_notification(ctx: AutomationContext, title: str, description: str, color: int, fields: list):
-    """
-    Invia una notifica a un webhook di Discord con un messaggio personalizzato.
-    """
-    if not WEBHOOK_URL or WEBHOOK_URL == "IL_TUO_URL_DEL_WEBHOOK_DI_DISCORD":
-        return
+    pass # In pausa per il test di diagnosi
 
-    print("Sending Discord webhook notification...", flush=True)
-    
-    trigger_payload = ctx.automation_run_data.triggers[0].payload
-    model_id = trigger_payload.model_id
-    version_id = trigger_payload.version_id
-    commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{model_id}@{version_id}"
-    
-    message = {
-        "content": "New Speckle Automation Report!",
-        "username": "Speckle Validator",
-        "avatar_url": "https://speckle.systems/favicon.ico",
-        "embeds": [{
-            "title": title,
-            "description": description,
-            "url": commit_url,
-            "color": color,
-            "fields": fields,
-            "footer": {"text": f"Commit ID: {version_id}"}
-        }]
-    }
-
-    try:
-        requests.post(WEBHOOK_URL, json=message)
-    except Exception as e:
-        print(f"Could not send Discord webhook notification. Reason: {e}", flush=True)
+def get_ai_suggestion(prompt: str) -> str:
+    return "AI suggestion paused for diagnostic test."
 
 
-#============== LOGICA DELLE REGOLE ==================================================
+#============== LOGICA DELLE REGOLE (SEMPLIFICATA PER DIAGNOSI) ======================
 def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
-    """
-    Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
-    il parametro 'Fire_Rating' compilato.
-    """
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
-    
-    validation_errors = []
-    for el in all_elements:
-        category = getattr(el, 'category', '')
-        if any(target.lower() in category.lower() for target in TARGET_CATEGORIES_RULE_1):
-            try:
-                properties = getattr(el, 'properties')
-                revit_parameters = properties['Parameters']
-                instance_params = revit_parameters['Instance Parameters']
-                text_group = instance_params[PARAMETER_GROUP]
-                fire_rating_param_dict = text_group[FIRE_RATING_PARAM]
-                value = fire_rating_param_dict.get("value")
-                if value is None or not str(value).strip():
-                    raise ValueError("Parameter value is missing or empty.")
-            except (AttributeError, KeyError, ValueError):
-                validation_errors.append(el)
-
-    if validation_errors:
-        error_description = f"{len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
-        ai_prompt = (
-            "Agisci come un Direttore Lavori italiano esperto e molto pratico. "
-            "Dato il seguente problema di validazione rilevato in un modello BIM, "
-            "fornisci due azioni correttive concrete e operative, come se stessi parlando al team in cantiere. "
-            "Sii conciso e usa un formato markdown (lista puntata). "
-            f"Problema: '{error_description}'."
-        )
-        ai_suggestion = get_ai_suggestion(ai_prompt)
-        
-        title = f"🚨 Validation Alert: Missing Data: {FIRE_RATING_PARAM}"
-        description = f"A validation rule failed in project **{ctx.automation_run_data.project_id}**."
-        fields = [
-            {"name": "Model", "value": f"`{ctx.automation_run_data.triggers[0].payload.model_id}`", "inline": True},
-            {"name": "Failed Elements", "value": str(len(validation_errors)), "inline": True},
-            {"name": "🤖 Site Manager's Advice", "value": ai_suggestion, "inline": False},
-        ]
-        send_webhook_notification(ctx, title, description, 15158332, fields)
-
-        ctx.attach_error_to_objects(
-            category=f"Missing Data: {FIRE_RATING_PARAM}",
-            affected_objects=validation_errors,
-            message=f"The parameter '{FIRE_RATING_PARAM}' is missing or empty."
-        )
-    
-    print(f"Rule #1 Finished. {len(validation_errors)} errors found.", flush=True)
-    return validation_errors
+    print(f"Rule #1 Finished. Skipping logic for this test.", flush=True)
+    return []
 
 def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
-    """
-    Esegue la Regola #3: Controlla che tutte le porte/finestre abbiano
-    la sigillatura specificata.
-    """
     print("--- RUNNING RULE #3: FIRE COMPARTMENTATION CHECK ---", flush=True)
-    
-    penetration_errors = []
-    for el in all_elements:
-        category = getattr(el, 'category', '')
-        if any(target.lower() in category.lower() for target in OPENING_CATEGORIES):
-            is_sealed = False
-            try:
-                properties = getattr(el, 'properties', {})
-                revit_parameters = properties.get('Parameters', {})
-                instance_params = revit_parameters.get('Instance Parameters', {})
-                text_group = instance_params.get(PARAMETER_GROUP, {})
-                seal_param_dict = text_group.get(FIRE_SEAL_PARAM)
-                if seal_param_dict:
-                    value = seal_param_dict.get("value")
-                    if isinstance(value, str) and value.strip().lower() == "si":
-                        is_sealed = True
-            except Exception as e:
-                print(f"WARNING (Rule 3): Could not parse parameters for opening {el.id}. Reason: {e}", flush=True)
-            if not is_sealed:
-                penetration_errors.append(el)
+    print(f"Rule #3 Finished. Skipping logic for this test.", flush=True)
+    return []
 
-    if penetration_errors:
-        error_description = f"{len(penetration_errors)} openings require a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Si')."
-        ai_prompt = (
-            "Agisci come un Direttore Lavori italiano esperto e molto pratico. "
-            "Dato il seguente problema di validazione rilevato in un modello BIM, "
-            "fornisci due azioni correttive concrete e operative, come se stessi parlando al team in cantiere. "
-            "Sii conciso e usa un formato markdown (lista puntata). "
-            f"Problema: '{error_description}'."
-        )
-        ai_suggestion = get_ai_suggestion(ai_prompt)
-
-        title = "🚨 Validation Alert: Unsealed Fire Penetration"
-        description = f"A validation rule failed in project **{ctx.automation_run_data.project_id}**."
-        fields = [
-            {"name": "Model", "value": f"`{ctx.automation_run_data.triggers[0].payload.model_id}`", "inline": True},
-            {"name": "Failed Elements", "value": str(len(penetration_errors)), "inline": True},
-            {"name": "🤖 Site Manager's Advice", "value": ai_suggestion, "inline": False},
-        ]
-        send_webhook_notification(ctx, title, description, 15158332, fields)
-
-        ctx.attach_error_to_objects(
-            category="Unsealed Fire Penetration",
-            affected_objects=penetration_errors,
-            message=f"This opening requires a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Si')."
-        )
-    
-    print(f"Rule #3 Finished. {len(penetration_errors)} errors found.", flush=True)
-    return penetration_errors
-
-def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> list:
+def run_cost_impact_diagnostic(ctx: AutomationContext) -> list:
     """
-    Esegue la Regola #4: Analisi di Impatto 5D con commento dell'AI.
+    Esegue una diagnosi sull'oggetto 'ctx' per trovare i metodi disponibili.
     """
-    print("--- RUNNING RULE #4: 5D COST IMPACT ANALYSIS ---", flush=True)
+    print("--- RUNNING DIAGNOSTIC FOR RULE #4 ---", flush=True)
     
     try:
-        # 1. Calcoliamo il costo totale della versione corrente
-        def calculate_total_cost(elements: list) -> float:
-            total_cost = 0
-            for el in elements:
-                try:
-                    properties = getattr(el, 'properties', {})
-                    revit_parameters = properties.get('Parameters', {})
-                    instance_params = revit_parameters.get('Instance Parameters', {})
-                    text_group = instance_params.get(PARAMETER_GROUP, {})
-                    cost_param = text_group.get(COST_PARAMETER, {})
-                    unit_cost = cost_param.get("value", 0)
-                    volume = getattr(el, 'volume', 0)
-                    total_cost += volume * unit_cost
-                except (AttributeError, KeyError):
-                    continue
-            return total_cost
-
-        current_cost = calculate_total_cost(current_elements)
-        print(f"Current version total cost: €{current_cost:.2f}", flush=True)
-
-        # 2. Salviamo il costo calcolato nei risultati di questa automazione.
-        # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
-        ctx.result_values["calculated_cost"] = current_cost
+        print("\n--- Analisi dell'oggetto 'AutomationContext' (ctx) ---", flush=True)
         
-        # 3. Cerchiamo i risultati dell'automazione precedente per recuperare il vecchio costo.
-        previous_results = ctx.get_previous_automation_results()
-        if not previous_results:
-            print("No previous automation run found. Skipping cost comparison.", flush=True)
-            return []
-            
-        previous_cost = previous_results[0].result_values.get("calculated_cost")
-        if previous_cost is None:
-            print("Could not find 'calculated_cost' in previous run results. Skipping comparison.", flush=True)
-            return []
-
-        # 4. Calcoliamo il delta e inviamo la notifica con l'analisi dell'AI
-        cost_delta = current_cost - float(previous_cost)
+        # Usiamo dir() per ottenere una lista di tutti gli attributi e metodi.
+        available_attributes = dir(ctx)
         
-        print(f"Cost analysis complete. Previous: €{previous_cost:.2f}, Current: €{current_cost:.2f}, Delta: €{cost_delta:.2f}", flush=True)
-
-        if abs(cost_delta) > 0.01:
-            color = 15158332 if cost_delta > 0 else 32768
-            delta_sign = "+" if cost_delta > 0 else ""
+        print("Attributi e metodi disponibili in 'ctx':", flush=True)
+        
+        for name in available_attributes:
+            if not name.startswith("_"): # Ignoriamo i metodi privati
+                print(f"  - {name}", flush=True)
             
-            ai_prompt = (
-                "Agisci come un Direttore Lavori esperto. Il costo del progetto è appena cambiato. "
-                f"Il costo precedente era €{previous_cost:.2f}, quello attuale è €{current_cost:.2f}, "
-                f"con una variazione di €{cost_delta:.2f}. "
-                "Scrivi un breve commento sull'impatto di questa variazione e suggerisci un'azione di controllo."
-            )
-            ai_comment = get_ai_suggestion(ai_prompt)
-
-            title = f"💰 Cost Impact Alert: € {delta_sign}{cost_delta:.2f}"
-            description = "A design change has impacted the estimated project cost."
-            fields = [
-                {"name": "Previous Total Cost", "value": f"€ {previous_cost:.2f}", "inline": True},
-                {"name": "New Total Cost", "value": f"€ {current_cost:.2f}", "inline": True},
-                {"name": "🤖 AI Analysis", "value": ai_comment, "inline": False},
-            ]
-            send_webhook_notification(ctx, title, description, color, fields)
+        print("\n--- Diagnosi completata ---", flush=True)
 
     except Exception as e:
-        print(f"ERROR (Rule 4): Could not run cost impact analysis. Reason: {e}", flush=True)
-        return ["Cost analysis failed"] 
+        print(f"DIAGNOSTIC FAILED: {e}", flush=True)
 
     return []
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
     """
-    Funzione principale che orchestra l'esecuzione di tutte le regole di validazione.
+    Funzione principale che esegue gli script di diagnosi.
     """
-    print("--- STARTING VALIDATION SCRIPT ---", flush=True)
+    print("--- STARTING FINAL DIAGNOSTIC SCRIPT ---", flush=True)
     
     try:
         commit_root_object = ctx.receive_version()
@@ -298,18 +98,12 @@ def main(ctx: AutomationContext) -> None:
 
         print(f"Found {len(all_elements)} total elements to analyze.", flush=True)
 
-        all_errors = []
-        all_errors.extend(run_fire_rating_check(all_elements, ctx))
-        all_errors.extend(run_penetration_check(all_elements, ctx))
+        # Eseguiamo le regole finte e poi la diagnosi
+        run_fire_rating_check(all_elements, ctx)
+        run_penetration_check(all_elements, ctx)
+        run_cost_impact_diagnostic(ctx)
         
-        all_errors.extend(run_cost_impact_check(all_elements, ctx))
-        
-        all_errors = [e for e in all_errors if e]
-
-        if all_errors:
-            ctx.mark_run_failed(f"Validation failed with a total of {len(all_errors)} issues.")
-        else:
-            ctx.mark_run_success("Validation passed: All rules were successful.")
+        ctx.mark_run_success("Diagnostic complete. Check logs for details.")
 
     except Exception as e:
         error_message = f"An error occurred during the script execution: {e}"
