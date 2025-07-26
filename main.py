@@ -1,6 +1,6 @@
 # main.py
 # Versione completa e funzionante con integrazione AI per le Regole #1 e #3.
-# AGGIORNAMENTO: Aggiunto logging di diagnosi per le notifiche webhook.
+# AGGIORNAMENTO: Corretto il formato del messaggio per il webhook di Discord.
 
 import json
 import requests
@@ -69,12 +69,12 @@ def get_ai_suggestion(error_description: str) -> str:
 
 def send_webhook_notification(ctx: AutomationContext, error_category: str, failed_elements: list, ai_suggestion: str):
     """
-    Invia una notifica a un webhook generico con i dettagli dell'errore.
+    Invia una notifica a un webhook di Discord con i dettagli dell'errore.
     """
-    if not WEBHOOK_URL or WEBHOOK_URL == "IL_TUO_URL_DEL_WEBHOOK":
+    if not WEBHOOK_URL or WEBHOOK_URL == "IL_TUO_URL_DEL_WEBHOOK_DI_DISCORD":
         return
 
-    print("Sending webhook notification...", flush=True)
+    print("Sending Discord webhook notification...", flush=True)
     
     trigger_payload = ctx.automation_run_data.triggers[0].payload
     model_id = trigger_payload.model_id
@@ -82,28 +82,36 @@ def send_webhook_notification(ctx: AutomationContext, error_category: str, faile
     
     commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{model_id}@{version_id}"
     
+    # --- CORREZIONE APPLICATA QUI ---
+    # Discord richiede un campo 'content' anche se si usano gli 'embeds'.
     message = {
-        "alert_type": "Speckle Automation Alert",
-        "error_category": error_category,
-        "project_id": ctx.automation_run_data.project_id,
-        "model_id": model_id,
-        "failed_elements_count": len(failed_elements),
-        "ai_suggestion": ai_suggestion,
-        "link_to_commit": commit_url
+        "content": "New Speckle Automation Alert!", # Aggiunto testo di base
+        "username": "Speckle Validator",
+        "avatar_url": "https://speckle.systems/favicon.ico",
+        "embeds": [
+            {
+                "title": f"🚨 Validation Alert: {error_category}",
+                "description": f"A validation rule failed in project **{ctx.automation_run_data.project_id}**.",
+                "url": commit_url,
+                "color": 15158332,  # Rosso
+                "fields": [
+                    {"name": "Model", "value": f"`{model_id}`", "inline": True},
+                    {"name": "Failed Elements", "value": str(len(failed_elements)), "inline": True},
+                    {"name": "🤖 AI Suggested Actions", "value": ai_suggestion, "inline": False},
+                ],
+                "footer": {"text": f"Commit ID: {version_id}"}
+            }
+        ]
     }
 
     try:
-        # --- BLOCCO DI DIAGNOSI APPLICATO QUI ---
         response = requests.post(WEBHOOK_URL, json=message)
-        
-        # Stampa la risposta del server del webhook per il debug.
         print(f"Webhook response status code: {response.status_code}", flush=True)
         print(f"Webhook response body: {response.text}", flush=True)
-        
-        response.raise_for_status() # Questo causerà un errore se lo status non è 2xx (successo)
+        response.raise_for_status()
 
     except Exception as e:
-        print(f"Could not send webhook notification. Reason: {e}", flush=True)
+        print(f"Could not send Discord webhook notification. Reason: {e}", flush=True)
 
 
 #============== LOGICA DELLE REGOLE (POTENZIATA) =====================================
