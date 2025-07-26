@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE FINALE E DEFINITIVA - CON GET_PARAMETER_VALUE SUPER ROBUSTO
+# VERSIONE FINALE E DEFINITIVA - CON IL PERCORSO CORRETTO AI PARAMETRI
 
 import json
 import requests
@@ -17,13 +17,24 @@ OPENING_CATEGORIES = ["Porte", "Finestre", "Doors", "Windows"]
 FIRE_RATING_PARAM = "Fire_Rating"
 FIRE_SEAL_PARAM = "FireSealInstalled"
 PARAMETER_GROUP = "Testo"
-
-# --- Regola #4 ---
 COST_PARAMETER = "Costo_Unitario"
 BUDGETS = {"Pavimenti": 50000, "Muri": 120000, "Floors": 50000, "Walls": 120000}
 #=====================================================================================
 
-# (Le funzioni find_all_elements, get_ai_suggestion, send_webhook_notification rimangono invariate)
+# ⬇️⬇️⬇️  FUNZIONE CHIAVE CORRETTA GRAZIE ALLA TUA INDICAZIONE!  ⬇️⬇️⬇️
+def get_parameter_value(element, group_name: str, param_name: str):
+    """
+    Estrae un valore di parametro seguendo il percorso esatto:
+    properties > Parameters > Instance Parameters > [Nome Gruppo]
+    """
+    try:
+        # Questo è il percorso esatto che hai trovato nel visualizzatore di Speckle!
+        return element.properties['Parameters']['Instance Parameters'][group_name][param_name]['value']
+    except (AttributeError, KeyError, TypeError):
+        # Se un qualsiasi passo di questo percorso fallisce, significa che il parametro non esiste.
+        return None
+
+# (Le funzioni di supporto rimangono invariate)
 def find_all_elements(base_object) -> list:
     elements = []
     element_container = getattr(base_object, '@elements', None) or getattr(base_object, 'elements', None)
@@ -55,35 +66,7 @@ def send_webhook_notification(title: str, description: str, color: int, fields: 
     except Exception as e:
         print(f"Errore durante l'invio della notifica a Discord: {e}")
 
-
-# ⬇️⬇️⬇️  ECCO LA MODIFICA CHIAVE  ⬇️⬇️⬇️
-def get_parameter_value(element, group_name: str, param_name: str):
-    """
-    Funzione robusta per trovare un parametro, cercando in diverse possibili strutture dati.
-    """
-    # Percorso 1: La struttura più moderna e pulita
-    try:
-        return getattr(element, 'parameters')[group_name][param_name]['value']
-    except (AttributeError, KeyError, TypeError):
-        pass # Il parametro non è qui, proviamo il prossimo percorso
-
-    # Percorso 2: Parametri nidificati sotto un attributo 'properties'
-    try:
-        return getattr(element, 'properties')['Parameters']['Instance Parameters'][group_name][param_name]['value']
-    except (AttributeError, KeyError, TypeError):
-        pass # Ancora niente, proviamo il prossimo
-
-    # Percorso 3: Parametri direttamente nell'oggetto, dentro un gruppo
-    try:
-        group = getattr(element, group_name)
-        return getattr(group, param_name)
-    except (AttributeError, KeyError, TypeError):
-        pass # Ultimo tentativo fallito
-    
-    # Se non abbiamo trovato nulla, restituiamo None
-    return None
-
-# (Le funzioni run_..._check rimangono invariate)
+# (Le funzioni delle regole ora funzioneranno correttamente)
 def run_fire_rating_check(all_elements: list) -> list:
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
     errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in TARGET_CATEGORIES_RULE_1) and (get_parameter_value(el, PARAMETER_GROUP, FIRE_RATING_PARAM) is None or not str(get_parameter_value(el, PARAMETER_GROUP, FIRE_RATING_PARAM)).strip())]
@@ -109,7 +92,7 @@ def run_budget_check(all_elements: list) -> list:
     print(f"Rule #4 Finished. {len(alerts)} budget issues found.", flush=True)
     return alerts
 
-#============== ORCHESTRATORE PRINCIPALE (rimane quasi invariato) ======================
+#============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
     print("--- STARTING VALIDATION SCRIPT ---", flush=True)
     try:
@@ -125,30 +108,6 @@ def main(ctx: AutomationContext) -> None:
         fire_rating_errors = run_fire_rating_check(all_elements)
         penetration_errors = run_penetration_check(all_elements)
         budget_alerts = run_budget_check(all_elements)
-        
-        # Lasciamo il blocco di debug per un'ultima verifica
-        # --- BLOCCO DI DEBUG ---
-        def print_debug_info(title, element):
-            print(f"\n--- {title} ---", flush=True)
-            try:
-                print(f"  ID: {getattr(element, 'id', 'N/A')}")
-                print(f"  Category: {getattr(element, 'category', 'N/A')}")
-                # Ora cerchiamo il valore specifico con la nuova funzione
-                fire_rating_val = get_parameter_value(element, PARAMETER_GROUP, FIRE_RATING_PARAM)
-                fire_seal_val = get_parameter_value(element, PARAMETER_GROUP, FIRE_SEAL_PARAM)
-                print(f"  Valore '{FIRE_RATING_PARAM}' trovato: {fire_rating_val}")
-                print(f"  Valore '{FIRE_SEAL_PARAM}' trovato: {fire_seal_val}")
-            except Exception as e:
-                print(f"  Impossibile stampare i dettagli dell'oggetto: {e}")
-            print("--------------------------------------------------\n", flush=True)
-
-        if fire_rating_errors:
-            print_debug_info("DEBUG: ISPEZIONE OGGETTO CON 'Fire_Rating' MANCANTE", fire_rating_errors[0])
-        
-        if penetration_errors:
-            print_debug_info("DEBUG: ISPEZIONE OGGETTO CON 'FireSealInstalled' ERRATO", penetration_errors[0])
-        # --- FINE BLOCCO DI DEBUG ---
-
 
         total_issues = len(fire_rating_errors) + len(penetration_errors) + len(budget_alerts)
 
@@ -157,12 +116,12 @@ def main(ctx: AutomationContext) -> None:
             fields = []
             
             if fire_rating_errors:
-                fields.append({"name": f"Dato Mancante: Fire Rating ({len(fire_rating_errors)} elementi)", "value": f"Manca il parametro '{FIRE_RATING_PARAM}'.", "inline": False})
-                ctx.attach_error_to_objects(category=f"Dato Mancante: {FIRE_RATING_PARAM}", affected_objects=fire_rating_errors, message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante.")
+                fields.append({"name": f"Dato Mancante: Fire Rating ({len(fire_rating_errors)} elementi)", "value": f"Manca il parametro '{FIRE_RATING_PARAM}' o è vuoto.", "inline": False})
+                ctx.attach_error_to_objects(category=f"Dato Mancante: {FIRE_RATING_PARAM}", affected_objects=fire_rating_errors, message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante o vuoto.")
             
             if penetration_errors:
-                fields.append({"name": f"Compartimentazione ({len(penetration_errors)} elementi)", "value": f"Aperture non sigillate ('{FIRE_SEAL_PARAM}' non è 'Si').", "inline": False})
-                ctx.attach_warning_to_objects(category="Apertura non Sigillata", affected_objects=penetration_errors, message=f"Questa apertura non è sigillata.")
+                fields.append({"name": f"Compartimentazione ({len(penetration_errors)} elementi)", "value": f"Aperture non sigillate (il parametro '{FIRE_SEAL_PARAM}' non è 'Si').", "inline": False})
+                ctx.attach_warning_to_objects(category="Apertura non Sigillata", affected_objects=penetration_errors, message=f"Questa apertura non è sigillata. Assicurarsi che il parametro '{FIRE_SEAL_PARAM}' sia impostato su 'Si'.")
 
             if budget_alerts:
                 fields.append({"name": f"Superamento Budget ({len(budget_alerts)} categorie)", "value": "\n".join(budget_alerts), "inline": False})
