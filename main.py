@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE FINALE E DEFINITIVA - CON DEBUG COMPATIBILE PER AMBIENTI DATATI
+# VERSIONE FINALE E DEFINITIVA - CON GET_PARAMETER_VALUE SUPER ROBUSTO
 
 import json
 import requests
@@ -23,6 +23,7 @@ COST_PARAMETER = "Costo_Unitario"
 BUDGETS = {"Pavimenti": 50000, "Muri": 120000, "Floors": 50000, "Walls": 120000}
 #=====================================================================================
 
+# (Le funzioni find_all_elements, get_ai_suggestion, send_webhook_notification rimangono invariate)
 def find_all_elements(base_object) -> list:
     elements = []
     element_container = getattr(base_object, '@elements', None) or getattr(base_object, 'elements', None)
@@ -54,17 +55,35 @@ def send_webhook_notification(title: str, description: str, color: int, fields: 
     except Exception as e:
         print(f"Errore durante l'invio della notifica a Discord: {e}")
 
-def get_parameter_value(element, group_name: str, param_name: str):
-    try:
-        # Questo è il percorso più comune per i parametri Revit
-        return element['parameters'][group_name][param_name]['value']
-    except (AttributeError, KeyError, TypeError):
-        # Alcuni connettori potrebbero usare una struttura leggermente diversa
-        try:
-            return element['properties']['Parameters']['Instance Parameters'][group_name][param_name]['value']
-        except (AttributeError, KeyError, TypeError):
-            return None
 
+# ⬇️⬇️⬇️  ECCO LA MODIFICA CHIAVE  ⬇️⬇️⬇️
+def get_parameter_value(element, group_name: str, param_name: str):
+    """
+    Funzione robusta per trovare un parametro, cercando in diverse possibili strutture dati.
+    """
+    # Percorso 1: La struttura più moderna e pulita
+    try:
+        return getattr(element, 'parameters')[group_name][param_name]['value']
+    except (AttributeError, KeyError, TypeError):
+        pass # Il parametro non è qui, proviamo il prossimo percorso
+
+    # Percorso 2: Parametri nidificati sotto un attributo 'properties'
+    try:
+        return getattr(element, 'properties')['Parameters']['Instance Parameters'][group_name][param_name]['value']
+    except (AttributeError, KeyError, TypeError):
+        pass # Ancora niente, proviamo il prossimo
+
+    # Percorso 3: Parametri direttamente nell'oggetto, dentro un gruppo
+    try:
+        group = getattr(element, group_name)
+        return getattr(group, param_name)
+    except (AttributeError, KeyError, TypeError):
+        pass # Ultimo tentativo fallito
+    
+    # Se non abbiamo trovato nulla, restituiamo None
+    return None
+
+# (Le funzioni run_..._check rimangono invariate)
 def run_fire_rating_check(all_elements: list) -> list:
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
     errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in TARGET_CATEGORIES_RULE_1) and (get_parameter_value(el, PARAMETER_GROUP, FIRE_RATING_PARAM) is None or not str(get_parameter_value(el, PARAMETER_GROUP, FIRE_RATING_PARAM)).strip())]
@@ -90,7 +109,7 @@ def run_budget_check(all_elements: list) -> list:
     print(f"Rule #4 Finished. {len(alerts)} budget issues found.", flush=True)
     return alerts
 
-#============== ORCHESTRATORE PRINCIPALE =============================================
+#============== ORCHESTRATORE PRINCIPALE (rimane quasi invariato) ======================
 def main(ctx: AutomationContext) -> None:
     print("--- STARTING VALIDATION SCRIPT ---", flush=True)
     try:
@@ -106,25 +125,19 @@ def main(ctx: AutomationContext) -> None:
         fire_rating_errors = run_fire_rating_check(all_elements)
         penetration_errors = run_penetration_check(all_elements)
         budget_alerts = run_budget_check(all_elements)
-
-        # --- INIZIO BLOCCO DI DEBUG (COMPATIBILE CON VERSIONI DATATE) ---
+        
+        # Lasciamo il blocco di debug per un'ultima verifica
+        # --- BLOCCO DI DEBUG ---
         def print_debug_info(title, element):
             print(f"\n--- {title} ---", flush=True)
             try:
                 print(f"  ID: {getattr(element, 'id', 'N/A')}")
-                print(f"  Speckle Type: {getattr(element, 'speckle_type', 'N/A')}")
                 print(f"  Category: {getattr(element, 'category', 'N/A')}")
-                # Tentiamo di accedere e stampare tutti i parametri
-                all_params = getattr(element, 'parameters', None)
-                if all_params:
-                    print("  Parameters:")
-                    # I parametri sono spesso in un dizionario nidificato
-                    for group_name, group_content in all_params.items():
-                        for param_name, param_details in group_content.items():
-                            value = param_details.get('value', 'VALORE NON TROVATO')
-                            print(f"    - {param_name}: {value}")
-                else:
-                    print("  Nessun attributo 'parameters' trovato.")
+                # Ora cerchiamo il valore specifico con la nuova funzione
+                fire_rating_val = get_parameter_value(element, PARAMETER_GROUP, FIRE_RATING_PARAM)
+                fire_seal_val = get_parameter_value(element, PARAMETER_GROUP, FIRE_SEAL_PARAM)
+                print(f"  Valore '{FIRE_RATING_PARAM}' trovato: {fire_rating_val}")
+                print(f"  Valore '{FIRE_SEAL_PARAM}' trovato: {fire_seal_val}")
             except Exception as e:
                 print(f"  Impossibile stampare i dettagli dell'oggetto: {e}")
             print("--------------------------------------------------\n", flush=True)
@@ -135,6 +148,7 @@ def main(ctx: AutomationContext) -> None:
         if penetration_errors:
             print_debug_info("DEBUG: ISPEZIONE OGGETTO CON 'FireSealInstalled' ERRATO", penetration_errors[0])
         # --- FINE BLOCCO DI DEBUG ---
+
 
         total_issues = len(fire_rating_errors) + len(penetration_errors) + len(budget_alerts)
 
