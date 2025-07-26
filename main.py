@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE FINALE CON BLOCCO DI DEBUG INTEGRATO
+# VERSIONE FINALE E DEFINITIVA - CON DEBUG COMPATIBILE PER AMBIENTI DATATI
 
 import json
 import requests
@@ -55,10 +55,15 @@ def send_webhook_notification(title: str, description: str, color: int, fields: 
         print(f"Errore durante l'invio della notifica a Discord: {e}")
 
 def get_parameter_value(element, group_name: str, param_name: str):
-    try: return element["parameters"][group_name][param_name]["value"]
+    try:
+        # Questo è il percorso più comune per i parametri Revit
+        return element['parameters'][group_name][param_name]['value']
     except (AttributeError, KeyError, TypeError):
-        try: return element['properties']['Parameters']['Instance Parameters'][group_name][param_name]['value']
-        except (AttributeError, KeyError, TypeError): return None
+        # Alcuni connettori potrebbero usare una struttura leggermente diversa
+        try:
+            return element['properties']['Parameters']['Instance Parameters'][group_name][param_name]['value']
+        except (AttributeError, KeyError, TypeError):
+            return None
 
 def run_fire_rating_check(all_elements: list) -> list:
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
@@ -102,25 +107,33 @@ def main(ctx: AutomationContext) -> None:
         penetration_errors = run_penetration_check(all_elements)
         budget_alerts = run_budget_check(all_elements)
 
-        # --- INIZIO BLOCCO DI DEBUG ---
-        # Stampiamo i dettagli del primo muro e della prima porta con errore
-        if fire_rating_errors:
-            print("\n--- DEBUG: ISPEZIONE PRIMO OGGETTO CON 'Fire_Rating' MANCANTE ---", flush=True)
+        # --- INIZIO BLOCCO DI DEBUG (COMPATIBILE CON VERSIONI DATATE) ---
+        def print_debug_info(title, element):
+            print(f"\n--- {title} ---", flush=True)
             try:
-                # Usiamo json.dumps per stampare l'oggetto in modo leggibile. ensure_ascii=False per gli accenti
-                print(json.dumps(fire_rating_errors[0].to_dict(), indent=2, ensure_ascii=False))
+                print(f"  ID: {getattr(element, 'id', 'N/A')}")
+                print(f"  Speckle Type: {getattr(element, 'speckle_type', 'N/A')}")
+                print(f"  Category: {getattr(element, 'category', 'N/A')}")
+                # Tentiamo di accedere e stampare tutti i parametri
+                all_params = getattr(element, 'parameters', None)
+                if all_params:
+                    print("  Parameters:")
+                    # I parametri sono spesso in un dizionario nidificato
+                    for group_name, group_content in all_params.items():
+                        for param_name, param_details in group_content.items():
+                            value = param_details.get('value', 'VALORE NON TROVATO')
+                            print(f"    - {param_name}: {value}")
+                else:
+                    print("  Nessun attributo 'parameters' trovato.")
             except Exception as e:
-                print(f"Impossibile stampare l'oggetto di debug: {e}")
-            print("------------------------------------------------------------------\n", flush=True)
+                print(f"  Impossibile stampare i dettagli dell'oggetto: {e}")
+            print("--------------------------------------------------\n", flush=True)
+
+        if fire_rating_errors:
+            print_debug_info("DEBUG: ISPEZIONE OGGETTO CON 'Fire_Rating' MANCANTE", fire_rating_errors[0])
         
         if penetration_errors:
-            print("\n--- DEBUG: ISPEZIONE PRIMO OGGETTO CON 'FireSealInstalled' ERRATO ---", flush=True)
-            try:
-                # Usiamo json.dumps per stampare l'oggetto in modo leggibile
-                print(json.dumps(penetration_errors[0].to_dict(), indent=2, ensure_ascii=False))
-            except Exception as e:
-                print(f"Impossibile stampare l'oggetto di debug: {e}")
-            print("---------------------------------------------------------------------\n", flush=True)
+            print_debug_info("DEBUG: ISPEZIONE OGGETTO CON 'FireSealInstalled' ERRATO", penetration_errors[0])
         # --- FINE BLOCCO DI DEBUG ---
 
         total_issues = len(fire_rating_errors) + len(penetration_errors) + len(budget_alerts)
