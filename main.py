@@ -1,5 +1,6 @@
 # main.py
 # Versione multidisciplinare con Regole #1, #3 e la nuova Regola #4 (Analisi di Impatto 5D).
+# AGGIORNAMENTO: Corretta la logica dell'orchestratore 'main'.
 
 import json
 import requests
@@ -273,7 +274,7 @@ def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> lis
     return [] # Questa regola non produce errori bloccanti
 
 
-#============== ORCHESTRATORE PRINCIPALE =============================================
+#============== ORCHESTRATORE PRINCIPALE (CORRETTO) =================================
 def main(ctx: AutomationContext) -> None:
     """
     Funzione principale che orchestra l'esecuzione di tutte le regole di validazione.
@@ -290,13 +291,15 @@ def main(ctx: AutomationContext) -> None:
 
         print(f"Found {len(all_elements)} total elements to analyze.", flush=True)
 
+        # Eseguiamo prima le regole di validazione che possono fallire.
         all_errors = []
         all_errors.extend(run_fire_rating_check(all_elements, ctx))
         all_errors.extend(run_penetration_check(all_elements, ctx))
         
-        # Eseguiamo la nostra nuova regola di analisi costi
+        # Eseguiamo l'analisi dei costi INDIPENDENTEMENTE dal risultato delle altre regole.
         run_cost_impact_check(all_elements, ctx)
         
+        # Ora decidiamo lo stato finale della Run.
         if all_errors:
             ctx.mark_run_failed(f"Validation failed with a total of {len(all_errors)} errors.")
         else:
