@@ -1,18 +1,28 @@
 # main.py
-# VERSIONE FINALE CON INDENTAZIONE CORRETTA
+# VERSIONE FINALE E COMPATIBILE CON AMBIENTI SPECKLE DATATI (SENZA get_secret)
 
 import json
 import requests
 import traceback
 from speckle_automate import AutomationContext, execute_automate_function
 
-#============== CONFIGURAZIONE GLOBALE ===============================================
+#============== CONFIGURAZIONE GLOBALE E CHIAVI SEGRETE ==============================
+#
+# ❗❗❗ INSERISCI LE TUE CHIAVI QUI ❗❗❗
+# Dato che il tuo ambiente Speckle non supporta i "Secrets", questo è l'unico modo.
+# ATTENZIONE: Questo metodo è insicuro. Non condividere questo file pubblicamente.
+#
+GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
+WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
+
+# --- Regole ---
 TARGET_CATEGORIES_RULE_1 = ["Muri", "Pavimenti", "Walls", "Floors"]
 OPENING_CATEGORIES = ["Porte", "Finestre", "Doors", "Windows"]
 FIRE_RATING_PARAM = "Fire_Rating"
 FIRE_SEAL_PARAM = "FireSealInstalled"
 PARAMETER_GROUP = "Testo"
 
+# --- Regola #4 ---
 COST_PARAMETER = "Costo_Unitario"
 BUDGETS = {"Pavimenti": 50000, "Muri": 120000, "Floors": 50000, "Walls": 120000}
 #=====================================================================================
@@ -36,19 +46,18 @@ def find_all_elements(base_object) -> list:
     return elements
 
 #============== FUNZIONI DI SUPPORTO =================================================
-def get_ai_suggestion(prompt: str, api_key: str) -> str:
-    if not api_key or "INCOLLA_QUI" in api_key:
+def get_ai_suggestion(prompt: str) -> str:
+    if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
         return "ATTENZIONE: Chiave API di Gemini non configurata."
-    
     print("Chiamata all'API di Gemini (simulata)...")
     # Qui andrà la vera implementazione della chiamata API
     return "Suggerimento AI: Verificare immediatamente le compartimentazioni antincendio e revisionare i costi dei muri."
 
-def send_webhook_notification(webhook_url: str, title: str, description: str, color: int, fields: list):
-    if not webhook_url or "INCOLLA_QUI" in webhook_url:
+def send_webhook_notification(title: str, description: str, color: int, fields: list):
+    if not WEBHOOK_URL or "INCOLLA_QUI" in WEBHOOK_URL:
         print("ATTENZIONE: URL del Webhook non configurato.")
         return
-    print(f"Invio notifica webhook (simulata): {title}")
+    print(f"Invio notifica webhook a Discord (simulata): {title}")
     # Qui andrà la vera implementazione dell'invio della notifica
     pass
 
@@ -71,7 +80,6 @@ def run_fire_rating_check(all_elements: list) -> list:
             value = get_parameter_value(el, PARAMETER_GROUP, FIRE_RATING_PARAM)
             if value is None or not str(value).strip():
                 validation_errors.append(el)
-    
     print(f"Rule #1 Finished. {len(validation_errors)} errors found.", flush=True)
     return validation_errors
 
@@ -84,7 +92,6 @@ def run_penetration_check(all_elements: list) -> list:
             value = get_parameter_value(el, PARAMETER_GROUP, FIRE_SEAL_PARAM)
             if not isinstance(value, str) or value.strip().lower() != "si":
                 penetration_errors.append(el)
-    
     print(f"Rule #3 Finished. {len(penetration_errors)} errors found.", flush=True)
     return penetration_errors
 
@@ -98,7 +105,6 @@ def run_budget_check(all_elements: list) -> list:
             unit_cost = float(cost_val) if cost_val else 0
             volume = getattr(el, 'volume', 0)
             costs_by_category[category] += volume * unit_cost
-
     budget_alerts = []
     for category, total_cost in costs_by_category.items():
         if total_cost > BUDGETS[category]:
@@ -106,28 +112,13 @@ def run_budget_check(all_elements: list) -> list:
             message = f"Categoria '{category}': superato il budget di €{overrun:,.2f}"
             print(f"BUDGET ALERT: {message}", flush=True)
             budget_alerts.append(message)
-    
     print(f"Rule #4 Finished. {len(budget_alerts)} budget issues found.", flush=True)
     return budget_alerts
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
     print("--- STARTING VALIDATION SCRIPT ---", flush=True)
-    
     try:
-        # --- SOLUZIONE ALTERNATIVA PER LE CHIAVI ---
-        # ❗ ATTENZIONE: INSERISCI LE TUE CHIAVI QUI SOTTO
-        FALLBACK_GEMINI_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjegI" 
-        FALLBACK_WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
-
-        gemini_api_key = ctx.get_secret("GEMINI_API_KEY") or FALLBACK_GEMINI_KEY
-        webhook_url = ctx.get_secret("DISCORD_WEBHOOK_URL") or FALLBACK_WEBHOOK_URL
-        
-        if gemini_api_key == FALLBACK_GEMINI_KEY:
-            print("AVVISO: Utilizzo della chiave API di riserva (fallback) dal codice. Non sicuro!", flush=True)
-        if webhook_url == FALLBACK_WEBHOOK_URL:
-            print("AVVISO: Utilizzo dell'URL Webhook di riserva (fallback) dal codice. Non sicuro!", flush=True)
-
         commit_root_object = ctx.receive_version()
         all_elements = find_all_elements(commit_root_object)
 
@@ -140,7 +131,6 @@ def main(ctx: AutomationContext) -> None:
         fire_rating_errors = run_fire_rating_check(all_elements)
         penetration_errors = run_penetration_check(all_elements)
         budget_alerts = run_budget_check(all_elements)
-        
         total_issues = len(fire_rating_errors) + len(penetration_errors) + len(budget_alerts)
 
         if total_issues > 0:
@@ -148,35 +138,25 @@ def main(ctx: AutomationContext) -> None:
             fields = []
             
             if fire_rating_errors:
-                fields.append({"name": f"Dato Mancante: Fire Rating ({len(fire_rating_errors)} elementi)", "value": f"Manca il parametro '{FIRE_RATING_PARAM}' su alcuni Muri o Pavimenti.", "inline": False})
-                ctx.attach_error_to_objects(
-                    category=f"Dato Mancante: {FIRE_RATING_PARAM}",
-                    object_ids=[e.id for e in fire_rating_errors],
-                    message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante o vuoto."
-                )
-
+                fields.append({"name": f"Dato Mancante: Fire Rating ({len(fire_rating_errors)} elementi)", "value": f"Manca il parametro '{FIRE_RATING_PARAM}'.", "inline": False})
+                ctx.attach_error_to_objects(category=f"Dato Mancante: {FIRE_RATING_PARAM}", object_ids=[e.id for e in fire_rating_errors], message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante.")
+            
             if penetration_errors:
-                fields.append({"name": f"Compartimentazione Antincendio ({len(penetration_errors)} elementi)", "value": f"Alcune aperture non sono sigillate (il parametro '{FIRE_SEAL_PARAM}' deve essere 'Si').", "inline": False})
-                ctx.attach_warning_to_objects(
-                    category="Apertura non Sigillata",
-                    object_ids=[e.id for e in penetration_errors],
-                    message=f"Questa apertura richiede una sigillatura. Il parametro '{FIRE_SEAL_PARAM}' deve essere 'Si'."
-                )
+                fields.append({"name": f"Compartimentazione ({len(penetration_errors)} elementi)", "value": f"Aperture non sigillate (parametro '{FIRE_SEAL_PARAM}' non è 'Si').", "inline": False})
+                ctx.attach_warning_to_objects(category="Apertura non Sigillata", object_ids=[e.id for e in penetration_errors], message=f"Questa apertura non è sigillata.")
 
             if budget_alerts:
                 fields.append({"name": f"Superamento Budget ({len(budget_alerts)} categorie)", "value": "\n".join(budget_alerts), "inline": False})
 
             ai_prompt = (
-                "Agisci come un BIM Manager esperto. "
-                "Un controllo automatico ha trovato i seguenti problemi in un modello. "
-                "Fornisci un commento conciso e un'azione prioritaria da comunicare al team. "
-                f"Problemi Rilevati:\n" + "\n".join([f["name"] for f in fields])
+                "Agisci come un BIM Manager. Un controllo automatico ha trovato i seguenti problemi in un modello. "
+                "Fornisci un commento conciso e un'azione prioritaria da comunicare al team. Problemi Rilevati:\n" 
+                + "\n".join([f["name"] for f in fields])
             )
-            ai_suggestion = get_ai_suggestion(ai_prompt, gemini_api_key)
+            ai_suggestion = get_ai_suggestion(ai_prompt)
             fields.append({"name": "🤖 Suggerimento del BIM Manager (AI)", "value": ai_suggestion, "inline": False})
 
-            send_webhook_notification(webhook_url, "🚨 Validazione Modello Fallita", summary_description, 15158332, fields)
-            
+            send_webhook_notification("🚨 Validazione Modello Fallita", summary_description, 15158332, fields)
             ctx.mark_run_failed(f"Validazione fallita con {total_issues} problemi totali.")
         else:
             success_message = "Validazione completata con successo. Tutti i controlli sono stati superati."
