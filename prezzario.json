@@ -1,0 +1,51 @@
+[
+  {
+    "descrizione": "Muratura portante in blocchi di laterizio sp. 87cm",
+    "costo_nuovo": 105.00,
+    "unita": "mq"
+  },
+  {
+    "descrizione": "Solaio in laterocemento sp. 12cm",
+    "costo_nuovo": 110.00,
+    "unita": "mq"
+  },
+  {
+    "descrizione": "Trave in cemento armato 62x90 cm",
+    "costo_nuovo": 45.50,
+    "unita": "mq"
+  },
+  {
+    "descrizione": "Tramezzo in cartongesso (DEMOLIZIONE)",
+    "costo_demolizione": 15.00,
+    "unita": "mq"
+  },
+  {
+    "descrizione": "Solaio in laterocemento sp. 12cm (DEMOLIZIONE)",
+    "costo_demolizione": 35.00,
+    "unita": "mq"
+  },
+  {
+    "descrizione": "Trave HEB 200 in acciaio S275",
+    "costo_kg": 2.50,
+    "unita": "kg",
+    "densita_kg_m3": 7850
+  },
+  {
+    "descrizione": "Trave HEB 100 in acciaio S275",
+    "costo_kg": 2.50,
+    "unita": "kg",
+    "densita_kg_m3": 7850
+  },
+  {
+    "descrizione": "Trave HEB 300 in acciaio S275",
+    "costo_kg": 2.35,
+    "unita": "kg",
+    "densita_kg_m3": 7850
+  },
+  {
+    "descrizione": "Trave HEB 200 in acciaio S275 (DEMOLIZIONE)",
+    "costo_demolizione_kg": 0.80,
+    "unita": "kg",
+    "densita_kg_m3": 7850
+  }
+]
