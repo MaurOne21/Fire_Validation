@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE FINALE E DEFINITIVA - COMPATIBILE CON AMBIENTI SPECKLE DATATI
+# VERSIONE FINALE CON BLOCCO DI DEBUG INTEGRATO
 
 import json
 import requests
@@ -49,7 +49,10 @@ def send_webhook_notification(title: str, description: str, color: int, fields: 
         return
     print(f"Invio notifica webhook a Discord: {title}")
     embed = {"title": title, "description": description, "color": color, "fields": fields}
-    requests.post(WEBHOOK_URL, json={"embeds": [embed]})
+    try:
+        requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=5)
+    except Exception as e:
+        print(f"Errore durante l'invio della notifica a Discord: {e}")
 
 def get_parameter_value(element, group_name: str, param_name: str):
     try: return element["parameters"][group_name][param_name]["value"]
@@ -98,16 +101,28 @@ def main(ctx: AutomationContext) -> None:
         fire_rating_errors = run_fire_rating_check(all_elements)
         penetration_errors = run_penetration_check(all_elements)
         budget_alerts = run_budget_check(all_elements)
-        
+
         # --- INIZIO BLOCCO DI DEBUG ---
-# Stampiamo i dettagli del primo muro con errore per analizzarlo
-if fire_rating_errors:
-    print("\n--- DEBUG: ISPEZIONE PRIMO MURO CON ERRORE ---", flush=True)
-    # Usiamo json.dumps per stampare l'oggetto in modo leggibile
-    print(json.dumps(fire_rating_errors[0].to_dict(), indent=2))
-    print("---------------------------------------------\n", flush=True)
-# --- FINE BLOCCO DI DEBUG ---
+        # Stampiamo i dettagli del primo muro e della prima porta con errore
+        if fire_rating_errors:
+            print("\n--- DEBUG: ISPEZIONE PRIMO OGGETTO CON 'Fire_Rating' MANCANTE ---", flush=True)
+            try:
+                # Usiamo json.dumps per stampare l'oggetto in modo leggibile. ensure_ascii=False per gli accenti
+                print(json.dumps(fire_rating_errors[0].to_dict(), indent=2, ensure_ascii=False))
+            except Exception as e:
+                print(f"Impossibile stampare l'oggetto di debug: {e}")
+            print("------------------------------------------------------------------\n", flush=True)
         
+        if penetration_errors:
+            print("\n--- DEBUG: ISPEZIONE PRIMO OGGETTO CON 'FireSealInstalled' ERRATO ---", flush=True)
+            try:
+                # Usiamo json.dumps per stampare l'oggetto in modo leggibile
+                print(json.dumps(penetration_errors[0].to_dict(), indent=2, ensure_ascii=False))
+            except Exception as e:
+                print(f"Impossibile stampare l'oggetto di debug: {e}")
+            print("---------------------------------------------------------------------\n", flush=True)
+        # --- FINE BLOCCO DI DEBUG ---
+
         total_issues = len(fire_rating_errors) + len(penetration_errors) + len(budget_alerts)
 
         if total_issues > 0:
@@ -116,12 +131,10 @@ if fire_rating_errors:
             
             if fire_rating_errors:
                 fields.append({"name": f"Dato Mancante: Fire Rating ({len(fire_rating_errors)} elementi)", "value": f"Manca il parametro '{FIRE_RATING_PARAM}'.", "inline": False})
-                #  ⬇️⬇️⬇️  ECCO LA CORREZIONE  ⬇️⬇️⬇️
                 ctx.attach_error_to_objects(category=f"Dato Mancante: {FIRE_RATING_PARAM}", affected_objects=fire_rating_errors, message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante.")
             
             if penetration_errors:
                 fields.append({"name": f"Compartimentazione ({len(penetration_errors)} elementi)", "value": f"Aperture non sigillate ('{FIRE_SEAL_PARAM}' non è 'Si').", "inline": False})
-                #  ⬇️⬇️⬇️  ECCO LA CORREZIONE  ⬇️⬇️⬇️
                 ctx.attach_warning_to_objects(category="Apertura non Sigillata", affected_objects=penetration_errors, message=f"Questa apertura non è sigillata.")
 
             if budget_alerts:
