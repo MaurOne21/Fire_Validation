@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 8.1 - TEST FOCALIZZATO SOLO SULLA VALIDAZIONE DEI COSTI (con indentazione corretta)
+# VERSIONE 8.2 - CON DEBUG MIRATO PER LA REGOLA DEI COSTI
 
 import json
 import requests
@@ -72,40 +72,62 @@ def send_webhook_notification(title: str, description: str, color: int, fields: 
 #============== FUNZIONI DELLE REGOLE ================================================
 
 def run_fire_rating_check(all_elements: list) -> list:
+    # Questa funzione rimane per completezza ma non è usata nel test attuale
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
     errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_TARGET_CATEGORIES) and (get_instance_parameter_value(el, COST_PARAM_GROUP, FIRE_RATING_PARAM) is None or not str(get_instance_parameter_value(el, COST_PARAM_GROUP, FIRE_RATING_PARAM)).strip())]
     print(f"Rule #1 Finished. {len(errors)} errors found.", flush=True)
     return errors
 
 def run_penetration_check(all_elements: list) -> list:
+    # Questa funzione rimane per completezza ma non è usata nel test attuale
     print("--- RUNNING RULE #3: FIRE COMPARTMENTATION CHECK ---", flush=True)
     errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_OPENING_CATEGORIES) and (not isinstance(get_instance_parameter_value(el, COST_PARAM_GROUP, FIRE_SEAL_PARAM), str) or get_instance_parameter_value(el, COST_PARAM_GROUP, FIRE_SEAL_PARAM).strip().lower() != "si")]
     print(f"Rule #3 Finished. {len(errors)} errors found.", flush=True)
     return errors
 
+# ⬇️⬇️⬇️  ECCO LA VERSIONE CON IL DEBUG INTEGRATO  ⬇️⬇️⬇️
 def run_ai_cost_check(elements: list, price_list: list) -> list:
     print("--- RUNNING RULE #5: AI COST CHECK (incl. Steel Weight) ---", flush=True)
     cost_warnings = []
     price_dict = {item['descrizione']: item for item in price_list}
+    
+    processed_elements = 0
 
-    for el in elements:
+    for i, el in enumerate(elements):
+        # --- BLOCCO DI DEBUG ---
+        # Stampa i dati grezzi per i primi 5 elementi per vedere cosa arriva
+        if i < 5:
+            print(f"\n[DEBUG] Ispezione elemento {i+1}/{len(elements)} (ID: {getattr(el, 'id', 'N/A')})")
+            raw_description = get_type_parameter_value(el, COST_DESC_PARAM_GROUP, COST_DESC_PARAM_NAME)
+            raw_cost = get_instance_parameter_value(el, COST_PARAM_GROUP, COST_UNIT_PARAM_NAME)
+            print(f"  > Letto '{COST_DESC_PARAM_NAME}': {raw_description} (Tipo: {type(raw_description)})")
+            print(f"  > Letto '{COST_UNIT_PARAM_NAME}': {raw_cost} (Tipo: {type(raw_cost)})")
+        # --- FINE BLOCCO DI DEBUG ---
+
         item_description = get_type_parameter_value(el, COST_DESC_PARAM_GROUP, COST_DESC_PARAM_NAME)
         if not item_description:
+            if i < 5: print("  > MOTIVO SCARTO: Descrizione non trovata o vuota.")
+            continue
+
+        try:
+            model_cost = float(get_instance_parameter_value(el, COST_PARAM_GROUP, COST_UNIT_PARAM_NAME))
+        except (ValueError, TypeError):
+            if i < 5:
+                cost_value = get_instance_parameter_value(el, COST_PARAM_GROUP, COST_UNIT_PARAM_NAME)
+                print(f"  > MOTIVO SCARTO: Costo_Unitario non trovato o non è un numero valido (valore: {cost_value}).")
             continue
 
         phase_demolished = getattr(el, 'phaseDemolished', 'N/A')
         is_demolished = phase_demolished != 'N/A' and phase_demolished != 'None'
         search_description = item_description + " (DEMOLIZIONE)" if is_demolished else item_description
         
-        try:
-            model_cost = float(get_instance_parameter_value(el, COST_PARAM_GROUP, COST_UNIT_PARAM_NAME))
-        except (ValueError, TypeError):
-            continue
-
         price_list_entry = price_dict.get(search_description)
         if not price_list_entry:
+            if i < 5: print(f"  > MOTIVO SCARTO: La descrizione '{search_description}' non è stata trovata nel prezzario.json.")
             continue
         
+        processed_elements += 1
+
         if 'densita_kg_m3' in price_list_entry:
             cost_key = "costo_demolizione_kg" if is_demolished else "costo_kg"
             reference_cost = price_list_entry.get(cost_key)
@@ -129,6 +151,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
         except Exception as e:
             print(f"Errore nell'interpretare risposta AI: {e}")
 
+    print(f"--- Elementi validi processati dalla Regola #5: {processed_elements}/{len(elements)} ---", flush=True)
     print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
     return cost_warnings
 
@@ -155,14 +178,9 @@ def main(ctx: AutomationContext) -> None:
 
         print(f"Trovati {len(all_elements)} elementi totali da analizzare.", flush=True)
         
-        # --- ESECUZIONE DELLE REGOLE ---
-        # Per ora commentiamo le regole antincendio per concentrarci sui costi
-        # fire_rating_errors = run_fire_rating_check(all_elements)
-        # penetration_errors = run_penetration_check(all_elements)
-        fire_rating_errors = []  # Impostiamo a lista vuota
-        penetration_errors = [] # Impostiamo a lista vuota
+        fire_rating_errors = []
+        penetration_errors = []
         
-        # Eseguiamo solo la regola dei costi
         cost_warnings = run_ai_cost_check(all_elements, price_list)
         
         total_issues = len(fire_rating_errors) + len(penetration_errors) + len(cost_warnings)
@@ -171,15 +189,6 @@ def main(ctx: AutomationContext) -> None:
             summary_desc = "Sono stati riscontrati problemi durante la validazione del modello:"
             fields = []
             
-            # --- AGGREGAZIONE DEI RISULTATI ---
-            if fire_rating_errors:
-                fields.append({"name": f"🔥 Dato Antincendio Mancante ({len(fire_rating_errors)} errori)", "value": f"Manca il parametro '{FIRE_RATING_PARAM}' o è vuoto.", "inline": False})
-                ctx.attach_error_to_objects(category=f"Dato Mancante: {FIRE_RATING_PARAM}", affected_objects=fire_rating_errors, message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante o vuoto.")
-            
-            if penetration_errors:
-                fields.append({"name": f"🔥 Apertura non Sigillata ({len(penetration_errors)} errori)", "value": f"Il parametro '{FIRE_SEAL_PARAM}' non è impostato su 'Si'.", "inline": False})
-                ctx.attach_warning_to_objects(category="Apertura non Sigillata", affected_objects=penetration_errors, message=f"Questa apertura non è sigillata.")
-
             if cost_warnings:
                 fields.append({"name": f"💸 Costo Non Congruo ({len(cost_warnings)} avvisi)", "value": "L'AI ha rilevato costi unitari fuori tolleranza.", "inline": False})
                 ctx.attach_warning_to_objects(
