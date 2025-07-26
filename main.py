@@ -1,11 +1,16 @@
 # main.py
-# Script di diagnosi definitiva per ispezionare l'oggetto 'automation_run_data'.
+# Versione completa e funzionante con integrazione AI per le Regole #1 e #3.
+# Utilizza la struttura dati corretta per le notifiche scoperta tramite il debug.
 
 import json
 import requests
 from speckle_automate import AutomationContext, execute_automate_function
 
 #============== CONFIGURAZIONE GLOBALE ===============================================
+# ❗ INSERISCI QUI LE TUE CHIAVI!
+GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
+WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
+
 # --- Regole ---
 TARGET_CATEGORIES_RULE_1 = ["Muri", "Pavimenti"]
 OPENING_CATEGORIES = ["Porte", "Finestre"] 
@@ -32,7 +37,70 @@ def find_all_elements(base_object) -> list:
     return all_elements
 
 
-#============== LOGICA DELLE REGOLE (FUNZIONANTE) =====================================
+#============== FUNZIONI DI SUPPORTO PER AI E NOTIFICHE ===============================
+def get_ai_suggestion(error_description: str) -> str:
+    """
+    Interroga l'API di Gemini per ottenere un suggerimento basato sulla descrizione dell'errore.
+    """
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "LA_TUA_CHIAVE_API_DI_GEMINI":
+        return "AI suggestion not available (API key not configured)."
+
+    print("Asking AI for a suggestion...", flush=True)
+    prompt = (
+        "You are an expert and concise BIM Manager. "
+        "Given the following validation error from a BIM model, "
+        "provide two brief, actionable corrective steps in a markdown bulleted list. "
+        f"Error: '{error_description}'"
+    )
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        result = response.json()
+        suggestion = result["candidates"][0]["content"]["parts"][0]["text"]
+        return suggestion
+    except Exception as e:
+        print(f"Could not get AI suggestion. Reason: {e}", flush=True)
+        return "Could not retrieve AI suggestion at this time."
+
+def send_webhook_notification(ctx: AutomationContext, error_category: str, failed_elements: list, ai_suggestion: str):
+    """
+    Invia una notifica a un webhook generico con i dettagli dell'errore.
+    """
+    if not WEBHOOK_URL or WEBHOOK_URL == "IL_TUO_URL_DEL_WEBHOOK":
+        return
+
+    print("Sending webhook notification...", flush=True)
+    
+    # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
+    # Accediamo ai dati del trigger per ottenere model_id e version_id.
+    trigger_payload = ctx.automation_run_data.triggers[0].payload
+    model_id = trigger_payload.model_id
+    version_id = trigger_payload.version_id
+    
+    commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{model_id}@{version_id}"
+    
+    message = {
+        "alert_type": "Speckle Automation Alert",
+        "error_category": error_category,
+        "project_id": ctx.automation_run_data.project_id,
+        "model_id": model_id,
+        "failed_elements_count": len(failed_elements),
+        "ai_suggestion": ai_suggestion,
+        "link_to_commit": commit_url
+    }
+
+    try:
+        requests.post(WEBHOOK_URL, json=message)
+    except Exception as e:
+        print(f"Could not send webhook notification. Reason: {e}", flush=True)
+
+
+#============== LOGICA DELLE REGOLE (POTENZIATA) =====================================
 def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
     """
     Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
@@ -57,6 +125,10 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
                 validation_errors.append(el)
 
     if validation_errors:
+        error_description = f"{len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
+        ai_suggestion = get_ai_suggestion(error_description)
+        send_webhook_notification(ctx, f"Missing Data: {FIRE_RATING_PARAM}", validation_errors, ai_suggestion)
+
         ctx.attach_error_to_objects(
             category=f"Missing Data: {FIRE_RATING_PARAM}",
             affected_objects=validation_errors,
@@ -94,6 +166,10 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
                 penetration_errors.append(el)
 
     if penetration_errors:
+        error_description = f"{len(penetration_errors)} openings require a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Si')."
+        ai_suggestion = get_ai_suggestion(error_description)
+        send_webhook_notification(ctx, "Unsealed Fire Penetration", penetration_errors, ai_suggestion)
+
         ctx.attach_error_to_objects(
             category="Unsealed Fire Penetration",
             affected_objects=penetration_errors,
@@ -107,9 +183,9 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
     """
-    Funzione principale che esegue la diagnosi.
+    Funzione principale che orchestra l'esecuzione di tutte le regole di validazione.
     """
-    print("--- STARTING FINAL DIAGNOSTIC SCRIPT ---", flush=True)
+    print("--- STARTING VALIDATION SCRIPT ---", flush=True)
     
     try:
         commit_root_object = ctx.receive_version()
@@ -126,20 +202,7 @@ def main(ctx: AutomationContext) -> None:
         all_errors.extend(run_penetration_check(all_elements, ctx))
         
         if all_errors:
-            # --- BLOCCO DI DIAGNOSI ---
-            print("\n--- INSPECTING 'ctx.automation_run_data' OBJECT ---", flush=True)
-            run_data = ctx.automation_run_data
-            available_attributes = dir(run_data)
-            for attr in available_attributes:
-                if not attr.startswith("_"): # Ignoriamo gli attributi privati
-                    try:
-                        value = getattr(run_data, attr)
-                        print(f"  - {attr}: {value}", flush=True)
-                    except:
-                        continue
-            print("--------------------------------------------------", flush=True)
-            
-            ctx.mark_run_failed(f"Validation failed with a total of {len(all_errors)} errors. Diagnostic complete.")
+            ctx.mark_run_failed(f"Validation failed with a total of {len(all_errors)} errors.")
         else:
             ctx.mark_run_success("Validation passed: All rules were successful.")
 
