@@ -98,8 +98,7 @@ def send_webhook_notification(ctx: AutomationContext, title: str, description: s
     }
 
     try:
-        response = requests.post(WEBHOOK_URL, json=message)
-        response.raise_for_status()
+        requests.post(WEBHOOK_URL, json=message)
     except Exception as e:
         print(f"Could not send Discord webhook notification. Reason: {e}", flush=True)
 
@@ -222,7 +221,7 @@ def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> lis
     try:
         previous_version = ctx.get_previous_version()
         if not previous_version:
-            print("No previous version found. Skipping cost impact analysis.", flush=True)
+            print("No previous version found. Skipping cost comparison.", flush=True)
             return []
             
         previous_elements = find_all_elements(previous_version)
