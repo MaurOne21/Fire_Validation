@@ -1,8 +1,5 @@
 # main.py
-# Versione finale con tutte le regole funzionanti:
-# Regola #1: Censimento Antincendio
-# Regola #3: Integrità Compartimentazioni (Porte)
-# Regola #4: Analisi di Impatto 5D con AI e query GraphQL robusta
+# Versione finale con le Regole #1, #3 e la nuova, robusta Regola #4 (Analisi Costi Intelligente).
 
 import json
 import requests
@@ -109,7 +106,46 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
     
     validation_errors = []
-    # ... (logica funzionante, omessa per brevità)
+    for el in all_elements:
+        category = getattr(el, 'category', '')
+        if any(target.lower() in category.lower() for target in TARGET_CATEGORIES_RULE_1):
+            try:
+                properties = getattr(el, 'properties')
+                revit_parameters = properties['Parameters']
+                instance_params = revit_parameters['Instance Parameters']
+                text_group = instance_params[PARAMETER_GROUP]
+                fire_rating_param_dict = text_group[FIRE_RATING_PARAM]
+                value = fire_rating_param_dict.get("value")
+                if value is None or not str(value).strip():
+                    raise ValueError("Parameter value is missing or empty.")
+            except (AttributeError, KeyError, ValueError):
+                validation_errors.append(el)
+
+    if validation_errors:
+        error_description = f"{len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
+        ai_prompt = (
+            "Agisci come un Direttore Lavori italiano esperto e molto pratico. "
+            "Dato il seguente problema di validazione rilevato in un modello BIM, "
+            "fornisci due azioni correttive concrete e operative, come se stessi parlando al team in cantiere. "
+            "Sii conciso e usa un formato markdown (lista puntata). "
+            f"Problema: '{error_description}'."
+        )
+        ai_suggestion = get_ai_suggestion(ai_prompt)
+        
+        title = f"🚨 Validation Alert: Missing Data: {FIRE_RATING_PARAM}"
+        description = f"A validation rule failed in project **{ctx.automation_run_data.project_id}**."
+        fields = [
+            {"name": "Model", "value": f"`{ctx.automation_run_data.triggers[0].payload.model_id}`", "inline": True},
+            {"name": "Failed Elements", "value": str(len(validation_errors)), "inline": True},
+            {"name": "🤖 Site Manager's Advice", "value": ai_suggestion, "inline": False},
+        ]
+        send_webhook_notification(ctx, title, description, 15158332, fields)
+
+        ctx.attach_error_to_objects(
+            category=f"Missing Data: {FIRE_RATING_PARAM}",
+            affected_objects=validation_errors,
+            message=f"The parameter '{FIRE_RATING_PARAM}' is missing or empty."
+        )
     
     print(f"Rule #1 Finished. {len(validation_errors)} errors found.", flush=True)
     return validation_errors
@@ -122,7 +158,50 @@ def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
     print("--- RUNNING RULE #3: FIRE COMPARTMENTATION CHECK ---", flush=True)
     
     penetration_errors = []
-    # ... (logica funzionante, omessa per brevità)
+    for el in all_elements:
+        category = getattr(el, 'category', '')
+        if any(target.lower() in category.lower() for target in OPENING_CATEGORIES):
+            is_sealed = False
+            try:
+                properties = getattr(el, 'properties', {})
+                revit_parameters = properties.get('Parameters', {})
+                instance_params = revit_parameters.get('Instance Parameters', {})
+                text_group = instance_params.get(PARAMETER_GROUP, {})
+                seal_param_dict = text_group.get(FIRE_SEAL_PARAM)
+                if seal_param_dict:
+                    value = seal_param_dict.get("value")
+                    if isinstance(value, str) and value.strip().lower() == "si":
+                        is_sealed = True
+            except Exception as e:
+                print(f"WARNING (Rule 3): Could not parse parameters for opening {el.id}. Reason: {e}", flush=True)
+            if not is_sealed:
+                penetration_errors.append(el)
+
+    if penetration_errors:
+        error_description = f"{len(penetration_errors)} openings require a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Si')."
+        ai_prompt = (
+            "Agisci come un Direttore Lavori italiano esperto e molto pratico. "
+            "Dato il seguente problema di validazione rilevato in un modello BIM, "
+            "fornisci due azioni correttive concrete e operative, come se stessi parlando al team in cantiere. "
+            "Sii conciso e usa un formato markdown (lista puntata). "
+            f"Problema: '{error_description}'."
+        )
+        ai_suggestion = get_ai_suggestion(ai_prompt)
+
+        title = "🚨 Validation Alert: Unsealed Fire Penetration"
+        description = f"A validation rule failed in project **{ctx.automation_run_data.project_id}**."
+        fields = [
+            {"name": "Model", "value": f"`{ctx.automation_run_data.triggers[0].payload.model_id}`", "inline": True},
+            {"name": "Failed Elements", "value": str(len(penetration_errors)), "inline": True},
+            {"name": "🤖 Site Manager's Advice", "value": ai_suggestion, "inline": False},
+        ]
+        send_webhook_notification(ctx, title, description, 15158332, fields)
+
+        ctx.attach_error_to_objects(
+            category="Unsealed Fire Penetration",
+            affected_objects=penetration_errors,
+            message=f"This opening requires a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Si')."
+        )
     
     print(f"Rule #3 Finished. {len(penetration_errors)} errors found.", flush=True)
     return penetration_errors
@@ -134,38 +213,7 @@ def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> lis
     print("--- RUNNING RULE #4: 5D COST IMPACT ANALYSIS ---", flush=True)
     
     try:
-        trigger_payload = ctx.automation_run_data.triggers[0].payload
-        model_id = trigger_payload.model_id
-        
-        # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
-        # Costruiamo la query GraphQL come una singola stringa su una riga
-        # per evitare qualsiasi problema di formattazione.
-        query = (
-            'query GetPreviousCommit {'
-            f'project(id: "{ctx.automation_run_data.project_id}") {{'
-            f'model(id: "{model_id}") {{'
-            'branch(name: "main") {'
-            'commits(limit: 2) {'
-            'items { id }'
-            '}'
-            '}'
-            '}'
-            '}'
-            '}'
-        )
-        
-        response = ctx.speckle_client.execute_query(query=query)
-        
-        commits = response["data"]["project"]["model"]["branch"]["commits"]["items"]
-        
-        if len(commits) < 2:
-            print("Not enough versions to compare. Skipping cost impact analysis.", flush=True)
-            return []
-        
-        previous_commit_id = commits[1]["id"]
-        previous_version = ctx.receive_version(previous_commit_id)
-        previous_elements = find_all_elements(previous_version)
-        
+        # 1. Calcoliamo il costo totale della versione corrente
         def calculate_total_cost(elements: list) -> float:
             total_cost = 0
             for el in elements:
@@ -183,9 +231,24 @@ def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> lis
             return total_cost
 
         current_cost = calculate_total_cost(current_elements)
-        previous_cost = calculate_total_cost(previous_elements)
+        print(f"Current version total cost: €{current_cost:.2f}", flush=True)
+
+        # 2. Salviamo il costo calcolato nei risultati di questa automazione.
+        ctx.automation_result["calculated_cost"] = current_cost
         
-        cost_delta = current_cost - previous_cost
+        # 3. Cerchiamo i risultati dell'automazione precedente per recuperare il vecchio costo.
+        previous_results = ctx.get_previous_automation_results()
+        if not previous_results:
+            print("No previous automation run found. Skipping cost comparison.", flush=True)
+            return []
+            
+        previous_cost = previous_results[0].result_values.get("calculated_cost")
+        if previous_cost is None:
+            print("Could not find 'calculated_cost' in previous run results. Skipping comparison.", flush=True)
+            return []
+
+        # 4. Calcoliamo il delta e inviamo la notifica con l'analisi dell'AI
+        cost_delta = current_cost - float(previous_cost)
         
         print(f"Cost analysis complete. Previous: €{previous_cost:.2f}, Current: €{current_cost:.2f}, Delta: €{cost_delta:.2f}", flush=True)
 
@@ -216,7 +279,7 @@ def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> lis
 
     return []
 
-#============== ORCHESTRATORE PRINCIPALE (CORRETTO) =================================
+#============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
     """
     Funzione principale che orchestra l'esecuzione di tutte le regole di validazione.
