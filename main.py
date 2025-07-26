@@ -22,6 +22,7 @@ COST_PARAMETER = "Costo_Unitario"
 #=====================================================================================
 
 
+
 def find_all_elements(base_object) -> list:
     """
     Cerca ricorsivamente in un oggetto Speckle tutti gli elementi.
@@ -234,7 +235,8 @@ def run_cost_impact_check(current_elements: list, ctx: AutomationContext) -> lis
         print(f"Current version total cost: €{current_cost:.2f}", flush=True)
 
         # 2. Salviamo il costo calcolato nei risultati di questa automazione.
-        ctx.automation_result["calculated_cost"] = current_cost
+        # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
+        ctx.result_values["calculated_cost"] = current_cost
         
         # 3. Cerchiamo i risultati dell'automazione precedente per recuperare il vecchio costo.
         previous_results = ctx.get_previous_automation_results()
