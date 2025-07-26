@@ -45,7 +45,7 @@ def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
     return validation_errors
 
 
-#============== DIAGNOSI PER LA REGOLA #2 ===========================================
+#============== DIAGNOSI PER LA REGola #2 ===========================================
 def run_branch_diagnostic(ctx: AutomationContext) -> list:
     """
     Esegue una diagnosi per trovare tutti i nomi dei branch del modello strutturale.
@@ -53,23 +53,23 @@ def run_branch_diagnostic(ctx: AutomationContext) -> list:
     print("--- RUNNING BRANCH DIAGNOSTIC FOR RULE #2 ---", flush=True)
     
     try:
-        # Costruiamo una query GraphQL per ottenere i nomi di tutti i branch.
-        query = f"""
-            query GetModelBranches {{
-              project(id: "{ctx.automation_run_data.project_id}") {{
-                model(id: "{STRUCTURAL_STREAM_ID}") {{
-                  branches {{
-                    items {{
-                      name
-                    }}
-                  }}
-                }}
-              }}
-            }}
-        """
-        clean_query = " ".join(query.split())
+        # --- SOLUZIONE DEFINITIVA APPLICATA QUI ---
+        # Costruiamo la query GraphQL come una singola stringa su una riga
+        # per evitare qualsiasi problema di formattazione.
+        query = (
+            'query GetModelBranches {'
+            f'project(id: "{ctx.automation_run_data.project_id}") {{'
+            f'model(id: "{STRUCTURAL_STREAM_ID}") {{'
+            'branches {'
+            'items { name }'
+            '}'
+            '}'
+            '}'
+            '}'
+            '}'
+        )
         
-        response = ctx.speckle_client.execute_query(query=clean_query)
+        response = ctx.speckle_client.execute_query(query=query)
         
         branches = response["data"]["project"]["model"]["branches"]["items"]
         
