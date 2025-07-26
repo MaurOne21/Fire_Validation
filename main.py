@@ -1,11 +1,16 @@
 # main.py
-# Script di diagnosi definitiva per ispezionare i VALORI dei parametri nelle Regole #1 e #3.
+# Versione completa e funzionante con la Regola #1 (Censimento Antincendio)
+# e la Regola #3 (Integrità Compartimentazioni), con integrazione AI e notifiche Discord.
 
 import json
 import requests
 from speckle_automate import AutomationContext, execute_automate_function
 
 #============== CONFIGURAZIONE GLOBALE ===============================================
+# ❗ INSERISCI QUI LE TUE CHIAVI!
+GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
+WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
+
 # --- Regole ---
 TARGET_CATEGORIES_RULE_1 = ["Muri", "Pavimenti"]
 OPENING_CATEGORIES = ["Porte", "Finestre"] 
@@ -32,17 +37,87 @@ def find_all_elements(base_object) -> list:
     return all_elements
 
 
-#============== DIAGNOSI PER LE REGOLE #1 E #3 ========================================
-def run_fire_rating_diagnostic(all_elements: list, ctx: AutomationContext):
+#============== FUNZIONI DI SUPPORTO PER AI E NOTIFICHE ===============================
+def get_ai_suggestion(error_description: str, failed_elements: list) -> str:
     """
-    Esegue una diagnosi sulla Regola #1, stampando i valori trovati.
+    Interroga l'API di Gemini per ottenere un suggerimento basato sulla descrizione dell'errore.
     """
-    print("--- RUNNING DIAGNOSTIC FOR RULE #1 ---", flush=True)
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "LA_TUA_CHIAVE_API_DI_GEMINI":
+        return "AI suggestion not available (API key not configured)."
+
+    print("Asking AI for a suggestion...", flush=True)
+    failed_ids = [getattr(el, 'id', 'N/A') for el in failed_elements[:5]]
+    ids_string = ", ".join(failed_ids)
     
+    prompt = (
+        "Agisci come un Direttore Lavori italiano esperto e molto pratico. "
+        "Dato il seguente problema di validazione rilevato in un modello BIM, "
+        "fornisci due azioni correttive concrete e operative, come se stessi parlando al team in cantiere. "
+        "Sii conciso e usa un formato markdown (lista puntata). "
+        f"Problema: '{error_description}'. "
+        f"ID degli elementi interessati (primi 5): {ids_string}"
+    )
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        result = response.json()
+        suggestion = result["candidates"][0]["content"]["parts"][0]["text"]
+        return suggestion
+    except Exception as e:
+        print(f"Could not get AI suggestion. Reason: {e}", flush=True)
+        return "Could not retrieve AI suggestion at this time."
+
+def send_webhook_notification(ctx: AutomationContext, title: str, description: str, color: int, fields: list):
+    """
+    Invia una notifica a un webhook di Discord con un messaggio personalizzato.
+    """
+    if not WEBHOOK_URL or WEBHOOK_URL == "IL_TUO_URL_DEL_WEBHOOK_DI_DISCORD":
+        return
+
+    print("Sending Discord webhook notification...", flush=True)
+    
+    trigger_payload = ctx.automation_run_data.triggers[0].payload
+    model_id = trigger_payload.model_id
+    version_id = trigger_payload.version_id
+    commit_url = f"{ctx.speckle_client.url}/projects/{ctx.automation_run_data.project_id}/models/{model_id}@{version_id}"
+    
+    message = {
+        "content": "New Speckle Automation Report!",
+        "username": "Speckle Validator",
+        "avatar_url": "https://speckle.systems/favicon.ico",
+        "embeds": [{
+            "title": title,
+            "description": description,
+            "url": commit_url,
+            "color": color,
+            "fields": fields,
+            "footer": {"text": f"Commit ID: {version_id}"}
+        }]
+    }
+
+    try:
+        requests.post(WEBHOOK_URL, json=message)
+    except Exception as e:
+        print(f"Could not send Discord webhook notification. Reason: {e}", flush=True)
+
+
+#============== LOGICA DELLE REGOLE ==================================================
+def run_fire_rating_check(all_elements: list, ctx: AutomationContext) -> list:
+    """
+    Esegue la Regola #1: Verifica che tutti i muri e solai abbiano
+    il parametro 'Fire_Rating' compilato.
+    """
+    print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
+    
+    validation_errors = []
     for el in all_elements:
         category = getattr(el, 'category', '')
         if any(target.lower() in category.lower() for target in TARGET_CATEGORIES_RULE_1):
-            print(f"-> Found target element {el.id} (Category: {category})", flush=True)
             try:
                 properties = getattr(el, 'properties')
                 revit_parameters = properties['Parameters']
@@ -50,20 +125,45 @@ def run_fire_rating_diagnostic(all_elements: list, ctx: AutomationContext):
                 text_group = instance_params[PARAMETER_GROUP]
                 fire_rating_param_dict = text_group[FIRE_RATING_PARAM]
                 value = fire_rating_param_dict.get("value")
-                print(f"   SUCCESS: Found '{FIRE_RATING_PARAM}'. Value: '{value}' (Type: {type(value)})", flush=True)
-            except (AttributeError, KeyError) as e:
-                print(f"   DIAGNOSTIC FAILED for element {el.id}: Could not find the parameter. Reason: {e}", flush=True)
+                if value is None or not str(value).strip():
+                    raise ValueError("Parameter value is missing or empty.")
+            except (AttributeError, KeyError, ValueError):
+                validation_errors.append(el)
 
-def run_penetration_check_diagnostic(all_elements: list, ctx: AutomationContext):
-    """
-    Esegue una diagnosi sulla Regola #3, stampando i valori trovati.
-    """
-    print("--- RUNNING DIAGNOSTIC FOR RULE #3 ---", flush=True)
+    if validation_errors:
+        error_description = f"{len(validation_errors)} elements are missing the '{FIRE_RATING_PARAM}' parameter."
+        ai_suggestion = get_ai_suggestion(error_description, validation_errors)
+        
+        title = f"🚨 Validation Alert: Missing Data: {FIRE_RATING_PARAM}"
+        description = f"A validation rule failed in project **{ctx.automation_run_data.project_id}**."
+        fields = [
+            {"name": "Model", "value": f"`{ctx.automation_run_data.triggers[0].payload.model_id}`", "inline": True},
+            {"name": "Failed Elements", "value": str(len(validation_errors)), "inline": True},
+            {"name": "🤖 Site Manager's Advice", "value": ai_suggestion, "inline": False},
+        ]
+        send_webhook_notification(ctx, title, description, 15158332, fields)
+
+        ctx.attach_error_to_objects(
+            category=f"Missing Data: {FIRE_RATING_PARAM}",
+            affected_objects=validation_errors,
+            message=f"The parameter '{FIRE_RATING_PARAM}' is missing or empty."
+        )
     
+    print(f"Rule #1 Finished. {len(validation_errors)} errors found.", flush=True)
+    return validation_errors
+
+def run_penetration_check(all_elements: list, ctx: AutomationContext) -> list:
+    """
+    Esegue la Regola #3: Controlla che tutte le porte/finestre abbiano
+    la sigillatura specificata.
+    """
+    print("--- RUNNING RULE #3: FIRE COMPARTMENTATION CHECK ---", flush=True)
+    
+    penetration_errors = []
     for el in all_elements:
         category = getattr(el, 'category', '')
         if any(target.lower() in category.lower() for target in OPENING_CATEGORIES):
-            print(f"-> Found target opening {el.id} (Category: {category})", flush=True)
+            is_sealed = False
             try:
                 properties = getattr(el, 'properties', {})
                 revit_parameters = properties.get('Parameters', {})
@@ -72,19 +172,42 @@ def run_penetration_check_diagnostic(all_elements: list, ctx: AutomationContext)
                 seal_param_dict = text_group.get(FIRE_SEAL_PARAM)
                 if seal_param_dict:
                     value = seal_param_dict.get("value")
-                    print(f"   SUCCESS: Found '{FIRE_SEAL_PARAM}'. Value: '{value}' (Type: {type(value)})", flush=True)
-                else:
-                    print(f"   WARNING: Parameter '{FIRE_SEAL_PARAM}' not found in group '{PARAMETER_GROUP}'.", flush=True)
+                    if isinstance(value, str) and value.strip().lower() == "si":
+                        is_sealed = True
             except Exception as e:
-                print(f"   DIAGNOSTIC FAILED for element {el.id}: {e}", flush=True)
+                print(f"WARNING (Rule 3): Could not parse parameters for opening {el.id}. Reason: {e}", flush=True)
+            if not is_sealed:
+                penetration_errors.append(el)
+
+    if penetration_errors:
+        error_description = f"{len(penetration_errors)} openings require a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Si')."
+        ai_suggestion = get_ai_suggestion(error_description, penetration_errors)
+
+        title = "🚨 Validation Alert: Unsealed Fire Penetration"
+        description = f"A validation rule failed in project **{ctx.automation_run_data.project_id}**."
+        fields = [
+            {"name": "Model", "value": f"`{ctx.automation_run_data.triggers[0].payload.model_id}`", "inline": True},
+            {"name": "Failed Elements", "value": str(len(penetration_errors)), "inline": True},
+            {"name": "🤖 Site Manager's Advice", "value": ai_suggestion, "inline": False},
+        ]
+        send_webhook_notification(ctx, title, description, 15158332, fields)
+
+        ctx.attach_error_to_objects(
+            category="Unsealed Fire Penetration",
+            affected_objects=penetration_errors,
+            message=f"This opening requires a fire seal ('{FIRE_SEAL_PARAM}' parameter must be 'Si')."
+        )
+    
+    print(f"Rule #3 Finished. {len(penetration_errors)} errors found.", flush=True)
+    return penetration_errors
 
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
     """
-    Funzione principale che esegue gli script di diagnosi.
+    Funzione principale che orchestra l'esecuzione di tutte le regole di validazione.
     """
-    print("--- STARTING FINAL DIAGNOSTIC SCRIPT ---", flush=True)
+    print("--- STARTING VALIDATION SCRIPT ---", flush=True)
     
     try:
         commit_root_object = ctx.receive_version()
@@ -96,11 +219,14 @@ def main(ctx: AutomationContext) -> None:
 
         print(f"Found {len(all_elements)} total elements to analyze.", flush=True)
 
-        # Eseguiamo solo gli script di diagnosi
-        run_fire_rating_diagnostic(all_elements, ctx)
-        run_penetration_check_diagnostic(all_elements, ctx)
+        all_errors = []
+        all_errors.extend(run_fire_rating_check(all_elements, ctx))
+        all_errors.extend(run_penetration_check(all_elements, ctx))
         
-        ctx.mark_run_success("Diagnostic complete. Check logs for details.")
+        if all_errors:
+            ctx.mark_run_failed(f"Validation failed with a total of {len(all_errors)} errors.")
+        else:
+            ctx.mark_run_success("Validation passed: All rules were successful.")
 
     except Exception as e:
         error_message = f"An error occurred during the script execution: {e}"
