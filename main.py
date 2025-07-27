@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 8.4 - FINALE E COMPLETA (TUTTE LE REGOLE ATTIVE)
+# VERSIONE 9.0 - THE SPECKLECON DEMO SCRIPT (ALL RULES + WOW FACTOR)
 
 import json
 import requests
@@ -15,40 +15,17 @@ WEBHOOK_URL = "INCOLLA_QUI_IL_TUO_URL_DISCORD"
 FIRE_TARGET_CATEGORIES = ["Muri", "Pavimenti", "Walls", "Floors"]
 FIRE_OPENING_CATEGORIES = ["Porte", "Finestre", "Doors", "Windows"]
 FIRE_RATING_PARAM = "Fire_Rating"
-FIRE_SEAL_PARAM = "FireSealInstalled"
+FIRE_SEAL_PARAM = "FireSealInstalled" # Può essere Booleano o Testo
 
 # --- Regole Costi ---
 COST_DESC_PARAM_NAME = "Descrizione"
 COST_DESC_PARAM_GROUP = "Dati identità"
 COST_UNIT_PARAM_NAME = "Costo_Unitario"
 COST_PARAM_GROUP = "Testo"
+BUDGETS = {"Muri": 120000, "Pavimenti": 50000, "Walls": 120000, "Floors": 50000}
 #=====================================================================================
 
-# ⬇️⬇️⬇️  AI SIMULATA PERFETTA  ⬇️⬇️⬇️
-def get_ai_suggestion(prompt: str) -> str:
-    """Simula una risposta AI, gestendo sia la validazione dei costi che i prompt riassuntivi."""
-    if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
-        return '{"is_consistent": true, "justification": "AI non configurata."}'
-    
-    print(f"Chiamata all'API di Gemini (simulata) con prompt: {prompt[:70]}...")
-
-    # Caso 1: È un prompt per il riassunto finale
-    if "Project Manager" in prompt or "Direttore Lavori" in prompt:
-        return "Priorità alla revisione dei costi non congrui rilevati, seguita dalla verifica dei dati antincendio mancanti."
-
-    # Caso 2: È un prompt per la validazione di un costo
-    try:
-        model_cost_str = prompt.split("Costo Modello: €")[1].split(" ")[0]
-        model_cost = float(model_cost_str)
-        if model_cost < 30.0:
-            return '{"is_consistent": false, "justification": "Costo palesemente troppo basso."}'
-    except (IndexError, ValueError):
-        pass # Se non è un prompt di costo, va al caso standard
-
-    # Caso 3: Il costo è congruo o il prompt non è riconosciuto
-    return '{"is_consistent": true, "justification": "Il costo sembra congruo."}'
-
-# (Tutte le altre funzioni rimangono identiche)
+#============== FUNZIONI HELPER ======================================================
 def find_all_elements(base_object) -> list:
     elements = []
     element_container = getattr(base_object, '@elements', None) or getattr(base_object, 'elements', None)
@@ -71,6 +48,26 @@ def get_instance_parameter_value(element, group_name: str, param_name: str):
     try: return element.properties['Parameters']['Instance Parameters'][group_name][param_name]['value']
     except (AttributeError, KeyError, TypeError): return None
 
+def get_ai_suggestion(prompt: str) -> str:
+    # Questa funzione ora gestisce i prompt "WOW"
+    if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
+        if "Project Manager" in prompt: return "AI non configurata."
+        return '{"is_consistent": true, "justification": "AI non configurata."}'
+    
+    print(f"Chiamata all'API di Gemini (simulata) con prompt: {prompt[:70]}...")
+
+    if "Project Manager" in prompt:
+        return "Rischio budget elevato a causa di costi non congrui sulle strutture. Si raccomanda revisione immediata dei computi con il team strutturale."
+
+    try:
+        model_cost_str = prompt.split("Costo Modello: €")[1].split(" ")[0]
+        model_cost = float(model_cost_str)
+        if model_cost < 30.0:
+            return '{"is_consistent": false, "suggestion": 45.50, "justification": "Costo troppo basso per un tramezzo standard."}'
+    except (IndexError, ValueError): pass
+
+    return '{"is_consistent": true, "justification": "Costo congruo."}'
+
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
     if not WEBHOOK_URL or "INCOLLA_QUI" in WEBHOOK_URL: return
     print(f"Invio notifica webhook a Discord: {title}")
@@ -78,20 +75,44 @@ def send_webhook_notification(title: str, description: str, color: int, fields: 
     try: requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=5)
     except Exception as e: print(f"Errore durante l'invio della notifica a Discord: {e}")
 
+#============== FUNZIONI DELLE REGOLE ================================================
+
 def run_fire_rating_check(all_elements: list) -> list:
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
-    errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_TARGET_CATEGORIES) and (get_instance_parameter_value(el, COST_PARAM_GROUP, FIRE_RATING_PARAM) is None or not str(get_instance_parameter_value(el, COST_PARAM_GROUP, FIRE_RATING_PARAM)).strip())]
+    errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_TARGET_CATEGORIES) and not get_instance_parameter_value(el, COST_PARAM_GROUP, FIRE_RATING_PARAM)]
     print(f"Rule #1 Finished. {len(errors)} errors found.", flush=True)
     return errors
 
 def run_penetration_check(all_elements: list) -> list:
-    print("--- RUNNING RULE #3: FIRE COMPARTMENTATION CHECK ---", flush=True)
-    errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_OPENING_CATEGORIES) and (not isinstance(get_instance_parameter_value(el, COST_PARAM_GROUP, FIRE_SEAL_PARAM), str) or get_instance_parameter_value(el, COST_PARAM_GROUP, FIRE_SEAL_PARAM).strip().lower() != "si")]
+    print("--- RUNNING RULE #3: FIRE COMPARTMENTATION (BOOLEAN CHECK) ---", flush=True)
+    errors = []
+    for el in all_elements:
+        if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_OPENING_CATEGORIES):
+            value = get_instance_parameter_value(el, COST_PARAM_GROUP, FIRE_SEAL_PARAM)
+            # Logica robusta: gestisce booleano, testo, intero. Solo True o "si"/"yes"/"1" sono validi.
+            is_sealed = value is True or str(value).lower() in ["si", "yes", "true", "1"]
+            if not is_sealed:
+                errors.append(el)
     print(f"Rule #3 Finished. {len(errors)} errors found.", flush=True)
     return errors
 
+def run_total_budget_check(elements: list) -> list:
+    print("--- RUNNING RULE #4: TOTAL BUDGET CHECK ---", flush=True)
+    costs_by_category = {cat: 0 for cat in BUDGETS.keys()}
+    for el in elements:
+        category = getattr(el, 'category', '')
+        if category in costs_by_category:
+            cost_val = get_instance_parameter_value(el, COST_PARAM_GROUP, COST_UNIT_PARAM_NAME)
+            # Per il budget, ci serve una metrica: volume per i muri, area per i pavimenti
+            metric = getattr(el, 'volume', getattr(el, 'area', 0))
+            costs_by_category[category] += (float(cost_val) if cost_val else 0) * metric
+    alerts = [f"Categoria '{cat}': superato budget di €{costs_by_category[cat] - BUDGETS[cat]:,.2f}" for cat in costs_by_category if costs_by_category[cat] > BUDGETS[cat]]
+    for alert in alerts: print(f"BUDGET ALERT: {alert}", flush=True)
+    print(f"Rule #4 Finished. {len(alerts)} budget issues found.", flush=True)
+    return alerts
+
 def run_ai_cost_check(elements: list, price_list: list) -> list:
-    print("--- RUNNING RULE #5: AI COST CHECK (incl. Steel Weight) ---", flush=True)
+    print("--- RUNNING RULE #5: AI COST CHECK (NEW, DEMO & STEEL) ---", flush=True)
     cost_warnings = []
     price_dict = {item['descrizione']: item for item in price_list}
     for el in elements:
@@ -104,17 +125,20 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
         search_description = item_description + " (DEMOLIZIONE)" if is_demolished else item_description
         price_list_entry = price_dict.get(search_description)
         if not price_list_entry: continue
+        
         if 'densita_kg_m3' in price_list_entry:
-            cost_key, reference_cost, cost_unit = ("costo_demolizione_kg", price_list_entry.get("costo_demolizione_kg"), "€/kg") if is_demolished else ("costo_kg", price_list_entry.get("costo_kg"), "€/kg")
+            cost_key, ref_cost, unit = ("costo_demolizione_kg", price_list_entry.get("costo_demolizione_kg"), "€/kg") if is_demolished else ("costo_kg", price_list_entry.get("costo_kg"), "€/kg")
         else:
-            cost_key, reference_cost, cost_unit = ("costo_demolizione", price_list_entry.get("costo_demolizione"), f"€/{price_list_entry.get('unita', 'cad')}") if is_demolished else ("costo_nuovo", price_list_entry.get("costo_nuovo"), f"€/{price_list_entry.get('unita', 'cad')}")
-        if reference_cost is None: continue
-        ai_prompt = (f"Agisci come un computista. Valuta questo costo: '{search_description}', Costo Modello: €{model_cost:.2f} {cost_unit}, Costo Riferimento: {reference_cost:.2f} {cost_unit}. È irragionevole? Rispondi in JSON con 'is_consistent' e 'justification'.")
+            cost_key, ref_cost, unit = ("costo_demolizione", price_list_entry.get("costo_demolizione"), f"€/{price_list_entry.get('unita', 'cad')}") if is_demolished else ("costo_nuovo", price_list_entry.get("costo_nuovo"), f"€/{price_list_entry.get('unita', 'cad')}")
+        if ref_cost is None: continue
+        
+        ai_prompt = (f"Agisci come un computista. Valuta: '{search_description}', Costo Modello: €{model_cost:.2f} {unit}, Costo Riferimento: €{ref_cost:.2f} {unit}. È congruo? Se no, suggerisci un costo e giustifica. Rispondi SOLO in JSON con 'is_consistent', 'suggestion', 'justification'.")
         ai_response_str = get_ai_suggestion(ai_prompt)
+        
         try:
             ai_response = json.loads(ai_response_str)
             if not ai_response.get("is_consistent"):
-                warning_message = f"AI: {ai_response.get('justification', 'Costo non congruo.')}"
+                warning_message = f"AI Suggestion: {ai_response.get('justification')} (Suggerito: ~€{ai_response.get('suggestion'):.2f})"
                 cost_warnings.append((el, warning_message))
         except Exception as e: print(f"Errore nell'interpretare risposta AI: {e}")
     print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
@@ -129,42 +153,50 @@ def main(ctx: AutomationContext) -> None:
         try:
             with open(prezzario_path, 'r', encoding='utf-8') as f: price_list = json.load(f)
             print("Prezzario 'prezzario.json' caricato.")
-        except Exception as e: print(f"ATTENZIONE: 'prezzario.json' non trovato o illeggibile: {e}")
+        except Exception as e: print(f"ATTENZIONE: 'prezzario.json' non trovato: {e}")
 
         commit_root_object = ctx.receive_version()
         all_elements = find_all_elements(commit_root_object)
         if not all_elements:
-            ctx.mark_run_success("Nessun elemento processabile trovato.")
+            ctx.mark_run_success("Nessun elemento processabile.")
             return
 
         print(f"Trovati {len(all_elements)} elementi totali da analizzare.", flush=True)
         
-        # --- ESECUZIONE DI TUTTE LE REGOLE ---
         fire_rating_errors = run_fire_rating_check(all_elements)
         penetration_errors = run_penetration_check(all_elements)
+        budget_alerts = run_total_budget_check(all_elements)
         cost_warnings = run_ai_cost_check(all_elements, price_list)
         
-        total_issues = len(fire_rating_errors) + len(penetration_errors) + len(cost_warnings)
+        total_issues = len(fire_rating_errors) + len(penetration_errors) + len(budget_alerts) + len(cost_warnings)
 
         if total_issues > 0:
-            summary_desc = "Sono stati riscontrati problemi durante la validazione del modello:"
+            summary_desc = "Report di Validazione Automatica del Modello:"
             fields = []
+            error_summary_for_ai = []
             
             if fire_rating_errors:
                 fields.append({"name": f"🔥 Dato Antincendio Mancante ({len(fire_rating_errors)} errori)", "value": f"Manca il parametro '{FIRE_RATING_PARAM}' o è vuoto.", "inline": False})
                 ctx.attach_error_to_objects(category=f"Dato Mancante: {FIRE_RATING_PARAM}", affected_objects=fire_rating_errors, message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante o vuoto.")
+                error_summary_for_ai.append("dati antincendio mancanti")
             
             if penetration_errors:
-                fields.append({"name": f"🔥 Apertura non Sigillata ({len(penetration_errors)} errori)", "value": f"Il parametro '{FIRE_SEAL_PARAM}' non è impostato su 'Si'.", "inline": False})
+                fields.append({"name": f"🔥 Apertura non Sigillata ({len(penetration_errors)} errori)", "value": f"Il parametro '{FIRE_SEAL_PARAM}' non è impostato correttamente.", "inline": False})
                 ctx.attach_warning_to_objects(category="Apertura non Sigillata", affected_objects=penetration_errors, message=f"Questa apertura non è sigillata.")
+                error_summary_for_ai.append("aperture non sigillate")
 
+            if budget_alerts:
+                fields.append({"name": f"💰 Superamento Budget ({len(budget_alerts)} categorie)", "value": "\n".join(budget_alerts), "inline": False})
+                error_summary_for_ai.append("superamento del budget")
+            
             if cost_warnings:
                 fields.append({"name": f"💸 Costo Non Congruo ({len(cost_warnings)} avvisi)", "value": "L'AI ha rilevato costi unitari fuori tolleranza.", "inline": False})
-                ctx.attach_warning_to_objects(category="Costo Non Congruo (AI)", affected_objects=[item[0] for item in cost_warnings], message="Il costo unitario di questo elemento non sembra congruo.")
+                ctx.attach_warning_to_objects(category="Costo Non Congruo (AI)", affected_objects=[item[0] for item in cost_warnings], message=[item[1] for item in cost_warnings])
+                error_summary_for_ai.append("costi unitari non congrui")
 
-            ai_prompt = f"Agisci come un Project Manager. Un controllo automatico ha trovato questi problemi: {', '.join([f['name'] for f in fields])}. Riassumi le priorità in una frase."
+            ai_prompt = f"Agisci come un Project Manager esperto. Un controllo ha trovato i seguenti tipi di problemi: {', '.join(error_summary_for_ai)}. Analizza i rischi e suggerisci la prima azione strategica da intraprendere."
             ai_suggestion = get_ai_suggestion(ai_prompt)
-            fields.append({"name": "🤖 Suggerimento del Project Manager (AI)", "value": ai_suggestion, "inline": False})
+            fields.append({"name": "🤖 Analisi Strategica del PM (AI)", "value": ai_suggestion, "inline": False})
 
             send_webhook_notification("🚨 Validazione Modello Fallita", summary_desc, 15158332, fields)
             ctx.mark_run_failed(f"Validazione fallita con {total_issues} problemi totali.")
