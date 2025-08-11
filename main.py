@@ -41,20 +41,24 @@ def get_instance_parameter_value(element, group_name: str, param_name: str):
     except (AttributeError, KeyError, TypeError): return None
 
 def get_ai_suggestion(prompt: str) -> str:
-    # ...
     if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
         if "Riassumi le priorità" in prompt: return "AI non configurata."
         return '{"is_consistent": true, "justification": "AI non configurata."}'
     print(f"Chiamata all'API di Gemini (simulata)...")
+    
     if "Riassumi le priorità" in prompt:
-        return "Priorità alla revisione dei dati antincendio mancanti, seguita dalla verifica dei costi non congrui."
+        return "Priorità alla revisione dei dati antincendio mancanti e dei costi non congrui."
     try:
         model_cost_str = prompt.split("Costo Modello: €")[1].split(" ")[0]
         model_cost = float(model_cost_str)
+        # Un costo a zero (o molto basso) è quasi sempre un errore
+        if model_cost <= 0.1: 
+            return '{"is_consistent": false, "suggestion": 45.50, "justification": "Costo unitario non compilato o pari a zero."}'
         if model_cost < 30.0:
             return '{"is_consistent": false, "suggestion": 45.50, "justification": "Costo palesemente troppo basso."}'
-    except (IndexError, ValueError): pass
-    return '{"is_consistent": true, "justification": "Il costo sembra congruo."}'
+    except (IndexError, ValueError):
+        pass
+    return '{"is_consistent": true, "justification": "Costo congruo."}'
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
     # ...
@@ -104,24 +108,20 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
     price_dict = {item['descrizione']: item for item in price_list}
     
     for el in elements:
-        # Tentiamo di leggere entrambi i parametri necessari
-        item_description = get_type_parameter_value(el, GRUPPO_DATI_IDENTITA, COST_DESC_PARAM_NAME)
-        cost_value_raw = get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME)
+        # --- BLOCCO DI DEBUG OPZIONALE ---
+        # Per riattivare il debug, rimuovi i tre # dalle 6 righe seguenti
+        # print(f"\n[DEBUG COST] Ispezione elemento ID: {el.id}, Categoria: {getattr(el, 'category', 'N/A')}")
+        # item_description_debug = get_type_parameter_value(el, GRUPPO_DATI_IDENTITA, COST_DESC_PARAM_NAME)
+        # cost_value_raw_debug = get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME)
+        # print(f"  > `Descrizione` (da Tipo): '{item_description_debug}'")
+        # print(f"  > `Costo_Unitario` (da Istanza): '{cost_value_raw_debug}'")
+        # if item_description_debug and price_dict.get(item_description_debug): print("  > ✅ Match Trovato nel Prezzario")
         
-        # --- BLOCCO DI DEBUG ATTIVO ---
-        # Se anche solo uno dei due parametri è compilato, stampiamo un report di debug
-        if item_description or cost_value_raw is not None:
-            print(f"\n[DEBUG COST] Ispezione elemento ID: {el.id}, Categoria: {getattr(el, 'category', 'N/A')}")
-            print(f"  > `Descrizione` (da Tipo): '{item_description}'")
-            print(f"  > `Costo_Unitario` (da Istanza): '{cost_value_raw}'")
-
-            if not item_description:
-                print("  > 🔴 MOTIVO SCARTO: 'Descrizione' mancante o vuota.")
-                continue # Passa al prossimo elemento
-            
-            try:
-                model_cost = float(cost_value_raw)
-            except (ValueError, TypeError):
+        item_description = get_type_parameter_value(el, GRUPPO_DATI_IDENTITA, COST_DESC_PARAM_NAME)
+        if not item_description: continue
+        try:
+            model_cost = float(get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME))
+        except (ValueError, TypeError): continue
                 print(f"  > 🔴 MOTIVO SCARTO: 'Costo_Unitario' non è un numero valido.")
                 continue
 
