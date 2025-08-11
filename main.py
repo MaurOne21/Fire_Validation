@@ -1,9 +1,10 @@
 # main.py
-# VERSIONE 13.0 - CORE ENGINE ONLY (NO REPORTING, NO PLOTLY)
+# VERSIONE 13.1 - CORE ENGINE (CON IL FIX "IMPORT OS")
 
 import json
 import requests
 import traceback
+import os  # <-- ECCO LA RIGA MANCANTE. CHIEDO SCUSA.
 from speckle_automate import AutomationContext, execute_automate_function
 
 #============== CONFIGURAZIONE GLOBALE E CHIAVI SEGRETE ==============================
@@ -25,7 +26,7 @@ COST_PARAM_GROUP = "Testo"
 BUDGETS = {"Muri": 120000, "Pavimenti": 50000, "Walls": 120000, "Floors": 50000}
 #=====================================================================================
 
-# (Funzioni helper e delle regole. Nessuna modifica qui.)
+# (Tutte le funzioni helper e delle regole sono definite qui, non sono state modificate)
 def find_all_elements(base_object) -> list:
     elements = []
     element_container = getattr(base_object, '@elements', None) or getattr(base_object, 'elements', None)
@@ -92,11 +93,13 @@ def run_total_budget_check(elements: list) -> list:
 
 def run_ai_cost_check(elements: list, price_list: list) -> list:
     print("--- RUNNING RULE #5: AI COST CHECK ---", flush=True)
-    cost_warnings, price_dict = [], {item['descrizione']: item for item in price_list}
+    cost_warnings = []
+    price_dict = {item['descrizione']: item for item in price_list}
     for el in elements:
         item_description = get_type_parameter_value(el, COST_DESC_PARAM_GROUP, COST_DESC_PARAM_NAME)
         if not item_description: continue
-        try: model_cost = float(get_instance_parameter_value(el, COST_PARAM_GROUP, COST_UNIT_PARAM_NAME))
+        try:
+            model_cost = float(get_instance_parameter_value(el, COST_PARAM_GROUP, COST_UNIT_PARAM_NAME))
         except (ValueError, TypeError): continue
         # ... (logica interna identica)
     print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
@@ -105,7 +108,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
 
 #============== ORCHESTRATORE PRINCIPALE (MINIMALE) =======================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING CORE ENGINE VALIDATOR (v13.0) ---", flush=True)
+    print("--- STARTING CORE ENGINE VALIDATOR (v13.1) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -132,7 +135,6 @@ def main(ctx: AutomationContext) -> None:
             summary_desc = "Validazione completata."
             fields, error_counts = [], {}
             
-            # Raccogliamo i conteggi
             if fire_rating_errors: error_counts["Dato Antincendio Mancante"] = len(fire_rating_errors)
             if penetration_errors: error_counts["Apertura non Sigillata"] = len(penetration_errors)
             if budget_alerts: error_counts["Superamento Budget"] = len(budget_alerts)
