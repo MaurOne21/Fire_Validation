@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 13.2 - GOLDEN MASTER (STABILE + EVIDENZIAZIONE ERRORI)
+# VERSIONE 13.3 - PERFEZIONAMENTO FINALE (AI SIMULATA MIGLIORATA)
 
 import json
 import requests
@@ -7,28 +7,19 @@ import traceback
 import os
 from speckle_automate import AutomationContext, execute_automate_function
 
-#============== CONFIGURAZIONE GLOBALE E CHIAVI SEGRETE ==============================
+# ... (tutte le configurazioni e le funzioni helper fino a get_ai_suggestion) ...
 GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
 WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
-
-# --- Nomi dei Gruppi Parametri (in Italiano) ---
 GRUPPO_TESTO = "Testo"
 GRUPPO_DATI_IDENTITA = "Dati identità"
-
-# --- Regole Antincendio ---
-FIRE_TARGET_CATEGORIES = ["Muri", "Pavimenti", "Telai Strutturali", "Pilastri", 
-                          "Walls", "Floors", "Structural Framing", "Structural Columns"]
+FIRE_TARGET_CATEGORIES = ["Muri", "Pavimenti", "Telai Strutturali", "Pilastri", "Walls", "Floors", "Structural Framing", "Structural Columns"]
 FIRE_OPENING_CATEGORIES = ["Porte", "Finestre", "Doors", "Windows"]
 FIRE_RATING_PARAM = "Fire_Rating"
 FIRE_SEAL_PARAM = "FireSealInstalled"
-
-# --- Regole Costi ---
 COST_DESC_PARAM_NAME = "Descrizione"
 COST_UNIT_PARAM_NAME = "Costo_Unitario"
 BUDGETS = {"Muri": 120000, "Pavimenti": 50000, "Walls": 120000, "Floors": 50000}
-#=====================================================================================
 
-# (Funzioni helper e delle regole)
 def find_all_elements(base_object) -> list:
     elements = []
     element_container = getattr(base_object, '@elements', None) or getattr(base_object, 'elements', None)
@@ -48,19 +39,29 @@ def get_instance_parameter_value(element, group_name: str, param_name: str):
     try: return element.properties['Parameters']['Instance Parameters'][group_name][param_name]['value']
     except (AttributeError, KeyError, TypeError): return None
 
+# ⬇️⬇️⬇️ MODIFICA CHIAVE: AI SIMULATA PERFETTA ⬇️⬇️⬇️
 def get_ai_suggestion(prompt: str) -> str:
     if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
-        if "Project Manager" in prompt: return "AI non configurata."
+        if "Riassumi le priorità" in prompt: return "AI non configurata."
         return '{"is_consistent": true, "justification": "AI non configurata."}'
+    
     print(f"Chiamata all'API di Gemini (simulata)...")
-    if "Project Manager" in prompt: return "Priorità alla revisione dei costi e dei dati antincendio mancanti."
+
+    # Caso 1: È un prompt per il riassunto finale
+    if "Riassumi le priorità" in prompt:
+        return "Priorità alla revisione dei dati antincendio mancanti, seguita dalla verifica dei costi non congrui."
+
+    # Caso 2: È un prompt per la validazione di un costo
     try:
         model_cost_str = prompt.split("Costo Modello: €")[1].split(" ")[0]
         model_cost = float(model_cost_str)
         if model_cost < 30.0:
             return '{"is_consistent": false, "suggestion": 45.50, "justification": "Costo palesemente troppo basso."}'
-    except (IndexError, ValueError): pass
-    return '{"is_consistent": true, "justification": "Costo congruo."}'
+    except (IndexError, ValueError):
+        pass
+
+    # Caso 3: Il costo è congruo o il prompt non è riconosciuto
+    return '{"is_consistent": true, "justification": "Il costo sembra congruo."}'
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
     if not WEBHOOK_URL or "INCOLLA_QUI" in WEBHOOK_URL: return
@@ -104,6 +105,16 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
     cost_warnings = []
     price_dict = {item['descrizione']: item for item in price_list}
     for el in elements:
+        # --- BLOCCO DI DEBUG OPZIONALE ---
+        # Se i costi non vengono trovati, rimuovi il '#' dalle righe seguenti per avere un log dettagliato
+        # print(f"DEBUG COST CHECK: Elemento ID {el.id}")
+        # desc = get_type_parameter_value(el, GRUPPO_DATI_IDENTITA, COST_DESC_PARAM_NAME)
+        # print(f"  > Descrizione letta: {desc}")
+        # cost = get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME)
+        # print(f"  > Costo letto: {cost}")
+        # if desc and cost:
+        #     print(f"  > Match nel prezzario: {price_dict.get(desc)}")
+        
         item_description = get_type_parameter_value(el, GRUPPO_DATI_IDENTITA, COST_DESC_PARAM_NAME)
         if not item_description: continue
         try:
@@ -129,9 +140,9 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
     return cost_warnings
 
 
-#============== ORCHESTRATORE PRINCIPALE (STABILE) =======================
+#============== ORCHESTRATORE PRINCIPALE (GOLDEN MASTER) =======================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING GOLDEN MASTER VALIDATOR (v13.2) ---", flush=True)
+    print("--- STARTING GOLDEN MASTER VALIDATOR (v13.3) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -155,7 +166,6 @@ def main(ctx: AutomationContext) -> None:
         total_issues = len(fire_rating_errors) + len(penetration_errors) + len(budget_alerts) + len(cost_warnings)
 
         if total_issues > 0:
-            # ⬇️⬇️⬇️ REINSERITA LA LOGICA PER EVIDENZIARE GLI ERRORI ⬇️⬇️⬇️
             if fire_rating_errors:
                 ctx.attach_error_to_objects(category=f"Dato Mancante: {FIRE_RATING_PARAM}", affected_objects=fire_rating_errors, message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante o vuoto.")
             if penetration_errors:
@@ -163,7 +173,6 @@ def main(ctx: AutomationContext) -> None:
             if cost_warnings:
                 ctx.attach_warning_to_objects(category="Costo Non Congruo (AI)", affected_objects=[item[0] for item in cost_warnings], message=[item[1] for item in cost_warnings])
 
-            # (Logica per la notifica Discord, rimane invariata)
             summary_desc = "Validazione completata."
             fields, error_counts = [], {}
             if fire_rating_errors: error_counts["Dato Antincendio Mancante"] = len(fire_rating_errors)
