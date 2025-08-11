@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 11.2 - CORREZIONE TARGET REGOLE ANTINCENDIO
+# VERSIONE 11.3 - STABILE E COMPATIBILE (rimosso get_commit_data)
 
 import json
 import requests
@@ -21,7 +21,6 @@ GEMINI_API_KEY = "INCOLLA_QUI_LA_TUA_CHIAVE_GEMINI"
 WEBHOOK_URL = "INCOLLA_QUI_IL_TUO_URL_DISCORD"
 
 # --- Regole Antincendio ---
-# ⬇️⬇️⬇️ ECCO LA CORREZIONE! ⬇️⬇️⬇️
 FIRE_TARGET_CATEGORIES = ["Muri", "Pavimenti", "Walls", "Floors", "Structural Framing", "Structural Columns"]
 FIRE_OPENING_CATEGORIES = ["Porte", "Finestre", "Doors", "Windows"]
 FIRE_RATING_PARAM = "Fire_Rating"
@@ -35,19 +34,16 @@ COST_PARAM_GROUP = "Testo"
 BUDGETS = {"Muri": 120000, "Pavimenti": 50000, "Walls": 120000, "Floors": 50000}
 #=====================================================================================
 
-# (Tutte le funzioni helper e le funzioni delle regole rimangono identiche)
+# (Tutte le funzioni helper e delle regole rimangono identiche)
 def find_all_elements(base_object) -> list:
     elements = []
     element_container = getattr(base_object, '@elements', None) or getattr(base_object, 'elements', None)
     if element_container and isinstance(element_container, list):
-        for element in element_container:
-            elements.extend(find_all_elements(element))
+        for element in element_container: elements.extend(find_all_elements(element))
     elif isinstance(base_object, list):
-        for item in base_object:
-            elements.extend(find_all_elements(item))
-    if getattr(base_object, 'id', None) is not None:
-        if "Objects.Organization.Model" not in getattr(base_object, 'speckle_type', ''):
-            elements.append(base_object)
+        for item in base_object: elements.extend(find_all_elements(item))
+    if getattr(base_object, 'id', None) is not None and "Objects.Organization.Model" not in getattr(base_object, 'speckle_type', ''):
+        elements.append(base_object)
     return elements
 
 def get_type_parameter_value(element, group_name: str, param_name: str):
@@ -72,7 +68,6 @@ def get_ai_suggestion(prompt: str) -> str:
             return '{"is_consistent": false, "suggestion": 45.50, "justification": "Costo troppo basso per un tramezzo standard."}'
     except (IndexError, ValueError): pass
     return '{"is_consistent": true, "justification": "Costo congruo."}'
-
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
     if not WEBHOOK_URL or "INCOLLA_QUI" in WEBHOOK_URL: return
@@ -113,7 +108,6 @@ def run_total_budget_check(elements: list) -> list:
     print(f"Rule #4 Finished. {len(alerts)} budget issues found.", flush=True)
     return alerts
 
-
 def run_ai_cost_check(elements: list, price_list: list) -> list:
     print("--- RUNNING RULE #5: AI COST CHECK (NEW, DEMO & STEEL) ---", flush=True)
     cost_warnings = []
@@ -128,16 +122,13 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
         search_description = item_description + " (DEMOLIZIONE)" if is_demolished else item_description
         price_list_entry = price_dict.get(search_description)
         if not price_list_entry: continue
-        
         if 'densita_kg_m3' in price_list_entry:
-            cost_key, ref_cost, unit = ("costo_demolizione_kg", price_list_entry.get("costo_demolizione_kg"), "€/kg") if is_demolished else ("costo_kg", price_list_entry.get("costo_kg"), "€/kg")
+            _, ref_cost, unit = ("costo_demolizione_kg", price_list_entry.get("costo_demolizione_kg"), "€/kg") if is_demolished else ("costo_kg", price_list_entry.get("costo_kg"), "€/kg")
         else:
-            cost_key, ref_cost, unit = ("costo_demolizione", price_list_entry.get("costo_demolizione"), f"€/{price_list_entry.get('unita', 'cad')}") if is_demolished else ("costo_nuovo", price_list_entry.get("costo_nuovo"), f"€/{price_list_entry.get('unita', 'cad')}")
+            _, ref_cost, unit = ("costo_demolizione", price_list_entry.get("costo_demolizione"), f"€/{price_list_entry.get('unita', 'cad')}") if is_demolished else ("costo_nuovo", price_list_entry.get("costo_nuovo"), f"€/{price_list_entry.get('unita', 'cad')}")
         if ref_cost is None: continue
-        
-        ai_prompt = (f"Agisci come un computista. Valuta: '{search_description}', Costo Modello: €{model_cost:.2f} {unit}, Costo Riferimento: €{ref_cost:.2f} {unit}. È congruo? Se no, suggerisci un costo e giustifica. Rispondi SOLO in JSON con 'is_consistent', 'suggestion', 'justification'.")
+        ai_prompt = (f"Valuta: '{search_description}', Costo Modello: €{model_cost:.2f} {unit}, Costo Riferimento: €{ref_cost:.2f} {unit}. È congruo? JSON con 'is_consistent', 'suggestion', 'justification'.")
         ai_response_str = get_ai_suggestion(ai_prompt)
-        
         try:
             ai_response = json.loads(ai_response_str)
             if not ai_response.get("is_consistent"):
@@ -151,16 +142,14 @@ def create_html_report(all_errors: list, run_context: dict) -> str:
     # ... (codice identico a prima)
     if not PLOTLY_AVAILABLE: return "<h1>Plotly non disponibile.</h1>"
     if not all_errors: return f"<h1>✅ Nessun Errore</h1><p>Commit: {run_context['commit_id']}</p>"
-    errors_by_rule = {}
-    errors_by_category = {}
+    errors_by_rule, errors_by_category = {}, {}
     for error in all_errors:
         rule, category = error["rule_description"], error["element_category"]
         errors_by_rule[rule] = errors_by_rule.get(rule, 0) + 1
         if category != "N/A": errors_by_category[category] = errors_by_category.get(category, 0) + 1
     fig = make_subplots(rows=1, cols=2, specs=[[{"type": "bar"}, {"type": "pie"}]], subplot_titles=("Errori per Regola", "Errori per Categoria"))
     fig.add_trace(go.Bar(y=list(errors_by_rule.keys()), x=list(errors_by_rule.values()), orientation='h'), row=1, col=1)
-    if errors_by_category:
-        fig.add_trace(go.Pie(labels=list(errors_by_category.keys()), values=list(errors_by_category.values()), hole=.3), row=1, col=2)
+    if errors_by_category: fig.add_trace(go.Pie(labels=list(errors_by_category.keys()), values=list(errors_by_category.values()), hole=.3), row=1, col=2)
     fig.update_layout(showlegend=False, title_text=f"Report di Validazione - Commit {run_context['commit_id']}", margin=dict(t=100, b=20))
     graphs_html = fig.to_html(full_html=False, include_plotlyjs='cdn')
     table_header = "<tr><th>Regola</th><th>Livello</th><th>Categoria</th><th>ID Elemento</th><th>Messaggio</th></tr>"
@@ -169,9 +158,9 @@ def create_html_report(all_errors: list, run_context: dict) -> str:
     return f"<html><head><title>Speckle Report</title></head><body style='font-family: sans-serif;'>{graphs_html}<h2>Dettaglio Errori</h2>{table_html}</body></html>"
 
 def create_csv_export(all_errors: list, run_context: dict, file_path: str):
-    # ... (codice identico a prima)
     if not all_errors: return
-    fieldnames = ["timestamp", "run_id", "project_id", "model_id", "commit_id", "author_name", "rule_id", "rule_description", "element_id", "element_category", "error_level", "message", "penalty_score"]
+    # Rimosso 'author_name' per compatibilità
+    fieldnames = ["timestamp", "run_id", "project_id", "model_id", "commit_id", "rule_id", "rule_description", "element_id", "element_category", "error_level", "message", "penalty_score"]
     with open(file_path, mode='w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -184,16 +173,20 @@ def create_csv_export(all_errors: list, run_context: dict, file_path: str):
 def main(ctx: AutomationContext) -> None:
     print("--- STARTING MASTER VALIDATION SCRIPT (WITH HYBRID REPORTING) ---", flush=True)
     try:
-        # ... (logica iniziale)
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
         try:
             with open(prezzario_path, 'r', encoding='utf-8') as f: price_list = json.load(f)
             print("Prezzario 'prezzario.json' caricato.")
         except Exception as e: print(f"ATTENZIONE: 'prezzario.json' non trovato: {e}")
+        
+        # ⬇️⬇️⬇️ MODIFICA CHIAVE: Rimosso ctx.get_commit_data() ⬇️⬇️⬇️
+        run_context = {
+            "run_id": ctx.automation_run_id, "project_id": ctx.project_id, "model_id": ctx.model.id,
+            "commit_id": ctx.version_id
+            # "author_name" non è disponibile in questa versione dell'ambiente
+        }
 
-        commit = ctx.get_commit_data()
-        run_context = { "run_id": ctx.automation_run_id, "project_id": ctx.project_id, "model_id": ctx.model.id, "commit_id": ctx.version_id, "author_name": commit.authorName }
         all_elements = find_all_elements(ctx.receive_version())
         if not all_elements:
             ctx.mark_run_success("Nessun elemento processabile.")
@@ -201,14 +194,12 @@ def main(ctx: AutomationContext) -> None:
 
         print(f"Trovati {len(all_elements)} elementi da analizzare.", flush=True)
         
-        # Eseguiamo tutte le regole
         fire_rating_errors = run_fire_rating_check(all_elements)
         penetration_errors = run_penetration_check(all_elements)
         budget_alerts = run_total_budget_check(all_elements)
         cost_warnings = run_ai_cost_check(all_elements, price_list)
         
         all_errors_structured = []
-        # Aggreghiamo tutti gli errori in un unico formato
         for el in fire_rating_errors:
             all_errors_structured.append({"rule_id": "FIRE-01", "rule_description": "Dato Antincendio Mancante", "element_id": el.id, "element_category": getattr(el, 'category', 'N/A'), "error_level": "ERROR", "message": f"Manca il parametro '{FIRE_RATING_PARAM}'."})
         for el in penetration_errors:
@@ -219,7 +210,6 @@ def main(ctx: AutomationContext) -> None:
             all_errors_structured.append({"rule_id": "COST-05", "rule_description": "Costo Non Congruo (AI)", "element_id": el.id, "element_category": getattr(el, 'category', 'N/A'), "error_level": "WARNING", "message": ai_msg})
 
         total_issues = len(all_errors_structured)
-        # ... (Generazione report come prima)
         temp_path = os.path.dirname(ctx.speckle_token_path)
         html_report_path = os.path.join(temp_path, "validation_report.html")
         with open(html_report_path, "w", encoding='utf-8') as f: f.write(create_html_report(all_errors_structured, run_context))
@@ -228,10 +218,8 @@ def main(ctx: AutomationContext) -> None:
         ctx.store_result_blobs([html_report_path, csv_export_path])
 
         if total_issues > 0:
-            # Notifica sintetica (come v11.1)
-            summary_desc = f"Commit `{ctx.version_id}` di **{commit.authorName}**"
-            fields = []
-            error_counts = {}
+            summary_desc = f"Commit `{ctx.version_id}`" # Notifica più semplice senza nome autore
+            fields, error_counts = [], {}
             for error in all_errors_structured:
                 rule = error["rule_description"]
                 error_counts[rule] = error_counts.get(rule, 0) + 1
@@ -242,11 +230,9 @@ def main(ctx: AutomationContext) -> None:
             ai_prompt = f"Agisci come un Project Manager. Un controllo ha trovato questi problemi: {', '.join(error_counts.keys())}. Riassumi le priorità in una frase."
             ai_suggestion = get_ai_suggestion(ai_prompt)
             fields.append({"name": "🤖 Suggerimento del PM (AI)", "value": ai_suggestion, "inline": False})
-
             send_webhook_notification(f"🚨 {total_issues} Problemi Rilevati nel Modello", summary_desc, 15158332, fields)
             ctx.mark_run_failed(f"Validazione fallita con {total_issues} problemi totali.")
         else:
-            # ... (logica di successo come prima)
             success_message = "✅ Validazione completata con successo."
             print(success_message, flush=True)
             send_webhook_notification("✅ Validazione Modello Passata", success_message, 3066993, [])
