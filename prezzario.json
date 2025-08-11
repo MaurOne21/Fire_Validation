@@ -14,6 +14,11 @@
     "costo_nuovo": 45.50,
     "unita": "mq"
   },
+    {
+    "descrizione": "Pilastro in acciaio HE300B",
+    "costo_nuovo": 45.50,
+    "unita": "kg"
+  },
   {
     "descrizione": "Tramezzo in cartongesso (DEMOLIZIONE)",
     "costo_demolizione": 15.00,
