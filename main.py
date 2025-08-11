@@ -122,8 +122,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
         try:
             model_cost = float(get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME))
         except (ValueError, TypeError): continue
-                print(f"  > 🔴 MOTIVO SCARTO: 'Costo_Unitario' non è un numero valido.")
-                continue
+                #print(f"  > 🔴 MOTIVO SCARTO: 'Costo_Unitario' non è un numero valido.")
 
             search_description = item_description
             price_list_entry = price_dict.get(search_description)
