@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 13.5 - GOLDEN MASTER DEFINITIVO
+# VERSIONE 13.7 - LETTURA PARAMETRI A PROVA DI BOMBA
 
 import json
 import requests
@@ -30,6 +30,7 @@ BUDGETS = {"Muri": 120000, "Pavimenti": 50000, "Walls": 120000, "Floors": 50000}
 
 #============== FUNZIONI HELPER ======================================================
 def find_all_elements(base_object) -> list:
+    # ...
     elements = []
     element_container = getattr(base_object, '@elements', None) or getattr(base_object, 'elements', None)
     if element_container and isinstance(element_container, list):
@@ -40,13 +41,35 @@ def find_all_elements(base_object) -> list:
         elements.append(base_object)
     return elements
 
+def get_parameter_value_from_speckle_object(speckle_object, path: list):
+    """
+    Funzione super robusta che naviga un oggetto Speckle provando sia l'accesso a dizionario che ad attributo.
+    'path' è una lista di chiavi, es. ["Parameters", "Instance Parameters", "Testo", "Costo_Unitario", "value"]
+    """
+    current_level = speckle_object
+    for key in path:
+        next_level = None
+        # Prova 1: Accesso come attributo (es. obj.key)
+        if hasattr(current_level, key):
+            next_level = getattr(current_level, key)
+        # Prova 2: Accesso come dizionario (es. obj['key'])
+        elif isinstance(current_level, dict) and key in current_level:
+            next_level = current_level[key]
+        
+        if next_level is not None:
+            current_level = next_level
+        else:
+            # Se la chiave non esiste in nessun modo, il percorso è interrotto.
+            return None
+    return current_level
+
 def get_type_parameter_value(element, group_name: str, param_name: str):
-    try: return element.properties['Parameters']['Type Parameters'][group_name][param_name]['value']
-    except (AttributeError, KeyError, TypeError): return None
+    path = ["properties", "Parameters", "Type Parameters", group_name, param_name, "value"]
+    return get_parameter_value_from_speckle_object(element, path)
 
 def get_instance_parameter_value(element, group_name: str, param_name: str):
-    try: return element.properties['Parameters']['Instance Parameters'][group_name][param_name]['value']
-    except (AttributeError, KeyError, TypeError): return None
+    path = ["properties", "Parameters", "Instance Parameters", group_name, param_name, "value"]
+    return get_parameter_value_from_speckle_object(element, path)
 
 def get_ai_suggestion(prompt: str) -> str:
     if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
