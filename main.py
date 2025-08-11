@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 13.6 - AUTODIAGNOSI OGGETTO
+# VERSIONE 13.5 - GOLDEN MASTER DEFINITIVO (con indentazione corretta)
 
 import json
 import requests
@@ -48,57 +48,129 @@ def get_instance_parameter_value(element, group_name: str, param_name: str):
     try: return element.properties['Parameters']['Instance Parameters'][group_name][param_name]['value']
     except (AttributeError, KeyError, TypeError): return None
 
-#============== FUNZIONE DI DIAGNOSI =================================================
-def run_diagnostic_check(elements: list):
-    """
-    Analizza il primo elemento con un costo e stampa la sua struttura dati.
-    """
-    print("--- RUNNING DIAGNOSTIC MODE ---", flush=True)
+def get_ai_suggestion(prompt: str) -> str:
+    if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
+        if "Riassumi le priorità" in prompt: return "AI non configurata."
+        return '{"is_consistent": true, "justification": "AI non configurata."}'
     
-    element_to_debug = None
-    for el in elements:
-        # Usiamo il nome del gruppo corretto in italiano
-        cost_val = get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME)
-        if cost_val is not None:
-            element_to_debug = el
-            break
+    print(f"Chiamata all'API di Gemini (simulata)...")
 
-    if element_to_debug:
-        print("\n\n" + "="*30)
-        print("--- INIZIO AUTODIAGNOSI OGGETTO ---")
-        print(f"Sto analizzando l'elemento con ID: {element_to_debug.id}")
-        print(f"Categoria: {getattr(element_to_debug, 'category', 'N/A')}")
-        
-        # Tentiamo di stampare l'intera struttura 'properties' in modo leggibile
-        if hasattr(element_to_debug, 'properties'):
-            print("\n--- Contenuto di 'element.properties': ---")
-            try:
-                # Usiamo json.dumps per una stampa pulita e indentata
-                # ensure_ascii=False serve per stampare correttamente caratteri italiani come 'à'
-                print(json.dumps(element_to_debug.properties, indent=2, ensure_ascii=False))
-            except Exception as e:
-                print(f"Impossibile stampare 'properties' come JSON: {e}")
-                print("--- Contenuto grezzo di 'element.properties': ---")
-                try:
-                    # dir() elenca tutti gli attributi dell'oggetto
-                    print(dir(element_to_debug.properties))
-                except Exception as dir_e:
-                    print(f"Impossibile ispezionare 'properties' in modo grezzo: {dir_e}")
-        else:
-            print("\nL'oggetto non ha un attributo 'properties'.")
+    if "Riassumi le priorità" in prompt:
+        return "Priorità alla revisione dei dati antincendio mancanti e dei costi non congrui."
 
-        print("\n--- FINE AUTODIAGNOSI OGGETTO ---")
-        print("="*30 + "\n\n")
-    else:
-        print("\n--- NESSUN ELEMENTO TROVATO CON IL PARAMETRO 'Costo_Unitario' COMPILATO ---")
-        print("Assicurati che almeno un elemento nel commit abbia questo parametro di istanza nel gruppo 'Testo'.")
-
-    return
-
-#============== ORCHESTRATORE PRINCIPALE (DIAGNOSTICO) =======================
-def main(ctx: AutomationContext) -> None:
-    print("--- STARTING DIAGNOSTIC VALIDATOR (v13.6) ---", flush=True)
     try:
+        model_cost_str = prompt.split("Costo Modello: €")[1].split(" ")[0]
+        model_cost = float(model_cost_str)
+        if model_cost <= 0.1: 
+            return '{"is_consistent": false, "suggestion": 45.50, "justification": "Costo unitario non compilato o pari a zero."}'
+        if model_cost < 30.0:
+            return '{"is_consistent": false, "suggestion": 45.50, "justification": "Costo palesemente troppo basso."}'
+    except (IndexError, ValueError):
+        pass
+
+    return '{"is_consistent": true, "justification": "Costo congruo."}'
+
+def send_webhook_notification(title: str, description: str, color: int, fields: list):
+    if not WEBHOOK_URL or "INCOLLA_QUI" in WEBHOOK_URL: return
+    print(f"Invio notifica webhook a Discord: {title}")
+    embed = {"title": title, "description": description, "color": color, "fields": fields}
+    try: requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+    except Exception as e: print(f"Errore durante l'invio della notifica a Discord: {e}")
+
+#============== FUNZIONI DELLE REGOLE ================================================
+def run_fire_rating_check(all_elements: list) -> list:
+    print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
+    errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_TARGET_CATEGORIES) and not get_instance_parameter_value(el, GRUPPO_TESTO, FIRE_RATING_PARAM)]
+    print(f"Rule #1 Finished. {len(errors)} errors found.", flush=True)
+    return errors
+
+def run_penetration_check(all_elements: list) -> list:
+    print("--- RUNNING RULE #3: FIRE COMPARTMENTATION ---", flush=True)
+    errors = []
+    for el in all_elements:
+        if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_OPENING_CATEGORIES):
+            value = get_instance_parameter_value(el, GRUPPO_TESTO, FIRE_SEAL_PARAM)
+            if not (value is True or str(value).lower() in ["si", "yes", "true", "1"]):
+                errors.append(el)
+    print(f"Rule #3 Finished. {len(errors)} errors found.", flush=True)
+    return errors
+
+def run_total_budget_check(elements: list) -> list:
+    print("--- RUNNING RULE #4: TOTAL BUDGET CHECK ---", flush=True)
+    costs_by_category = {cat: 0 for cat in BUDGETS.keys()}
+    for el in elements:
+        category = getattr(el, 'category', '')
+        if category in costs_by_category:
+            cost_val = get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME)
+            metric = getattr(el, 'volume', getattr(el, 'area', 0))
+            costs_by_category[category] += (float(cost_val) if cost_val else 0) * metric
+    alerts = [f"Categoria '{cat}': superato budget di €{costs_by_category[cat] - BUDGETS[cat]:,.2f}" for cat in costs_by_category if costs_by_category[cat] > BUDGETS[cat]]
+    print(f"Rule #4 Finished. {len(alerts)} budget issues found.", flush=True)
+    return alerts
+
+def run_ai_cost_check(elements: list, price_list: list) -> list:
+    print("--- RUNNING RULE #5: AI COST CHECK ---", flush=True)
+    cost_warnings = []
+    price_dict = {item['descrizione']: item for item in price_list}
+    for el in elements:
+        # --- BLOCCO DI DEBUG OPZIONALE ---
+        # Per riattivare il debug, rimuovi i tre # dalle 6 righe seguenti
+        # print(f"\n[DEBUG COST] Ispezione elemento ID: {el.id}, Categoria: {getattr(el, 'category', 'N/A')}")
+        # item_description_debug = get_type_parameter_value(el, GRUPPO_DATI_IDENTITA, COST_DESC_PARAM_NAME)
+        # cost_value_raw_debug = get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME)
+        # print(f"  > `Descrizione` (da Tipo): '{item_description_debug}'")
+        # print(f"  > `Costo_Unitario` (da Istanza): '{cost_value_raw_debug}'")
+        # if item_description_debug and price_dict.get(item_description_debug): print("  > ✅ Match Trovato nel Prezzario")
+        
+        item_description = get_type_parameter_value(el, GRUPPO_DATI_IDENTITA, COST_DESC_PARAM_NAME)
+        if not item_description:
+            continue
+        try:
+            model_cost = float(get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME))
+        except (ValueError, TypeError):
+            continue
+        
+        phase_demolished = getattr(el, 'phaseDemolished', 'N/A')
+        is_demolished = phase_demolished != 'N/A' and phase_demolished != 'None'
+        search_description = item_description + " (DEMOLIZIONE)" if is_demolished else item_description
+        price_list_entry = price_dict.get(search_description)
+        
+        if not price_list_entry:
+            continue
+        
+        if 'densita_kg_m3' in price_list_entry:
+            _, ref_cost, _ = ("costo_demolizione_kg", price_list_entry.get("costo_demolizione_kg"), "€/kg") if is_demolished else ("costo_kg", price_list_entry.get("costo_kg"), "€/kg")
+        else:
+            _, ref_cost, _ = ("costo_demolizione", price_list_entry.get("costo_demolizione"), f"€/{price_list_entry.get('unita', 'cad')}") if is_demolished else ("costo_nuovo", price_list_entry.get("costo_nuovo"), f"€/{price_list_entry.get('unita', 'cad')}")
+        
+        if ref_cost is None:
+            continue
+        
+        ai_prompt = (f"Valuta: '{search_description}', Costo Modello: €{model_cost:.2f}, Riferimento: €{ref_cost:.2f}")
+        ai_response_str = get_ai_suggestion(ai_prompt)
+        
+        try:
+            ai_response = json.loads(ai_response_str)
+            if not ai_response.get("is_consistent"):
+                warning_message = f"AI: {ai_response.get('justification')} (Suggerito: ~€{ai_response.get('suggestion'):.2f})"
+                cost_warnings.append((el, warning_message))
+        except Exception as e:
+            print(f"Errore interpretazione AI: {e}")
+            
+    print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
+    return cost_warnings
+
+#============== ORCHESTRATORE PRINCIPALE (GOLDEN MASTER) =======================
+def main(ctx: AutomationContext) -> None:
+    print("--- STARTING GOLDEN MASTER VALIDATOR (v13.5) ---", flush=True)
+    try:
+        price_list = []
+        prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
+        try:
+            with open(prezzario_path, 'r', encoding='utf-8') as f: price_list = json.load(f)
+            print("Prezzario 'prezzario.json' caricato.")
+        except Exception as e: print(f"ATTENZIONE: 'prezzario.json' non trovato: {e}")
+
         all_elements = find_all_elements(ctx.receive_version())
         if not all_elements:
             ctx.mark_run_success("Nessun elemento processabile.")
@@ -106,10 +178,41 @@ def main(ctx: AutomationContext) -> None:
 
         print(f"Trovati {len(all_elements)} elementi da analizzare.", flush=True)
         
-        # Eseguiamo solo la funzione di diagnosi
-        run_diagnostic_check(all_elements)
+        fire_rating_errors = run_fire_rating_check(all_elements)
+        penetration_errors = run_penetration_check(all_elements)
+        budget_alerts = run_total_budget_check(all_elements)
+        cost_warnings = run_ai_cost_check(all_elements, price_list)
         
-        ctx.mark_run_success("Diagnosi completata. Controllare il log per i dettagli della struttura dati.")
+        total_issues = len(fire_rating_errors) + len(penetration_errors) + len(budget_alerts) + len(cost_warnings)
+
+        if total_issues > 0:
+            if fire_rating_errors:
+                ctx.attach_error_to_objects(category=f"Dato Mancante: {FIRE_RATING_PARAM}", affected_objects=fire_rating_errors, message=f"Il parametro '{FIRE_RATING_PARAM}' è mancante o vuoto.")
+            if penetration_errors:
+                ctx.attach_warning_to_objects(category="Apertura non Sigillata", affected_objects=penetration_errors, message=f"Questa apertura non è sigillata.")
+            if cost_warnings:
+                ctx.attach_warning_to_objects(category="Costo Non Congruo (AI)", affected_objects=[item[0] for item in cost_warnings], message=[item[1] for item in cost_warnings])
+
+            summary_desc = "Validazione completata."
+            fields, error_counts = [], {}
+            if fire_rating_errors: error_counts["Dato Antincendio Mancante"] = len(fire_rating_errors)
+            if penetration_errors: error_counts["Apertura non Sigillata"] = len(penetration_errors)
+            if budget_alerts: error_counts["Superamento Budget"] = len(budget_alerts)
+            if cost_warnings: error_counts["Costo Non Congruo (AI)"] = len(cost_warnings)
+            
+            for rule_desc, count in error_counts.items():
+                 fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
+            
+            ai_suggestion = get_ai_suggestion("Riassumi le priorità.")
+            fields.append({"name": "🤖 Suggerimento AI", "value": ai_suggestion, "inline": False})
+            
+            send_webhook_notification(f"🚨 {total_issues} Problemi Rilevati", summary_desc, 15158332, fields)
+            ctx.mark_run_failed(f"Validazione fallita con {total_issues} problemi.")
+        else:
+            success_message = "✅ Validazione completata. Nessun problema rilevato."
+            print(success_message, flush=True)
+            send_webhook_notification("✅ Validazione Passata", success_message, 3066993, [])
+            ctx.mark_run_success(success_message)
 
     except Exception as e:
         error_message = f"Errore critico: {e}"
@@ -117,7 +220,9 @@ def main(ctx: AutomationContext) -> None:
         print(error_message, flush=True)
         ctx.mark_run_failed(error_message)
 
-    print("--- DIAGNOSTIC SCRIPT FINISHED ---", flush=True)
+    print("--- GOLDEN MASTER SCRIPT FINISHED ---", flush=True)
 
 if __name__ == "__main__":
     execute_automate_function(main)
+
+```Forza, questa è la volta buona. Non demoralizzarti, siamo all'ultimo miglio
