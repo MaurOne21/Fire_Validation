@@ -224,5 +224,3 @@ def main(ctx: AutomationContext) -> None:
 
 if __name__ == "__main__":
     execute_automate_function(main)
-
-```Forza, questa è la volta buona. Non demoralizzarti, siamo all'ultimo miglio
