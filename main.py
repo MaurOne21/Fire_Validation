@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 19.4 - AI REALE (FIX DEFINITIVO RISPOSTA API)
+# VERSIONE 19.5 - AI REALE E FUNZIONANTE
 
 import json
 import requests
@@ -34,12 +34,10 @@ def find_all_elements(base_object) -> list:
 
 def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
     if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
-        print("ATTENZIONE: Chiave API di Gemini non configurata.")
-        if is_json_response: return '{"is_consistent": true, "justification": "AI non configurata."}'
+        if is_json_response: return '{"justification": "AI non configurata."}'
         return "AI non configurata."
 
-    print(f"Chiamando l'API di Gemini con prompt: {prompt[:80]}...")
-    
+    print(f"Chiamando l'API di Gemini...")
     headers = {"Content-Type": "application/json"}
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     
@@ -48,16 +46,24 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
         final_prompt += "\nRispondi SOLO con un oggetto JSON valido, senza ```json o altre formattazioni."
 
     payload = {"contents": [{"parts": [{"text": final_prompt}]}]}
+    json_response = {} # Inizializza per il logging in caso di errore
 
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
-        
         json_response = response.json()
         
-        # ⬇️⬇️⬇️ ECCO LA CORREZIONE DEFINITIVA E COMPLETA ⬇️⬇️⬇️
-        # Questo è il percorso esatto per estrarre il testo dalla risposta di Gemini
-        text_response = json_response['candidates']['content']['parts']['text'].strip()
+        # ⬇️⬇️⬇️ ECCO LA CORREZIONE #1 - PERCORSO DI LETTURA CORRETTO ⬇️⬇️⬇️
+        candidates = json_response.get("candidates", [])
+        if not candidates: raise KeyError("Nessun 'candidates' nella risposta.")
+        
+        # Accediamo al primo elemento della lista
+        content = candidates.get("content", {})
+        parts = content.get("parts", [])
+        if not parts: raise KeyError("Nessuna 'parts' nel contenuto.")
+        
+        # Accediamo al primo elemento della lista
+        text_response = parts.get("text", "").strip()
         
         print(f"Risposta ricevuta da Gemini: {text_response}")
         return text_response
@@ -109,7 +115,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
         ref_cost = price_list_entry.get("costo_nuovo") or price_list_entry.get("costo_kg")
         if ref_cost is None: continue
         
-        ai_prompt = (f"Sei un computista. Valuta questo costo: '{search_description}', Costo Modello: €{model_cost:.2f}, Riferimento: €{ref_cost:.2f}. Il costo del modello è irragionevole (es. zero, troppo basso/alto)? Giustifica e suggerisci un costo. Rispondi in JSON con 'is_consistent' (boolean), 'justification' (stringa), e 'suggested_cost' (numero o null).")
+        ai_prompt = (f"Sei un computista. Valuta questo costo: '{search_description}', Costo Modello: €{model_cost:.2f}, Riferimento: €{ref_cost:.2f}. Il costo del modello è irragionevole? Giustifica e suggerisci un costo. Rispondi in JSON con 'is_consistent' (boolean), 'justification' (stringa), e 'suggested_cost' (numero o null).")
         ai_response_str = get_ai_suggestion(ai_prompt, is_json_response=True)
         
         try:
@@ -128,7 +134,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING REAL-AI VALIDATOR (v19.4) ---", flush=True)
+    print("--- STARTING REAL-AI VALIDATOR (v19.5) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -152,9 +158,12 @@ def main(ctx: AutomationContext) -> None:
             if fire_rating_errors:
                 ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
             if cost_warnings:
+                # ⬇️⬇️⬇️ ECCO LA CORREZIONE #2 - SPACCHETTIAMO LA LISTA DI TUPLE ⬇️⬇️⬇️
+                objects_with_cost_warnings = [item for item in cost_warnings]
+                
                 ctx.attach_warning_to_objects(
                     category="Costo Non Congruo (AI)",
-                    affected_objects=[item for item in cost_warnings],
+                    affected_objects=objects_with_cost_warnings,
                     message="Il costo unitario non è congruo secondo l'analisi AI."
                 )
 
@@ -165,7 +174,7 @@ def main(ctx: AutomationContext) -> None:
             for rule_desc, count in error_counts.items():
                  fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
             
-            ai_summary_prompt = f"Sei un Project Manager. Un controllo ha trovato questi problemi: {', '.join(error_counts.keys())}. Riassumi le priorità in una frase."
+            ai_summary_prompt = f"Sei un Project Manager. Un controllo ha trovato: {', '.join(error_counts.keys())}. Riassumi le priorità in una frase."
             ai_suggestion = get_ai_suggestion(ai_summary_prompt, is_json_response=False)
             fields.append({"name": "🤖 Analisi Strategica (AI)", "value": ai_suggestion, "inline": False})
             
