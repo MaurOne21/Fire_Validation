@@ -11,19 +11,19 @@
     "densita_kg_m3": 7850
   },
   {
-    "descrizione": "Trave HEB 100 in acciaio S275",
+    "descrizione": "Trave HEB100 in acciaio S275",
     "costo_kg": 2.60,
     "unita": "kg",
     "densita_kg_m3": 7850
   },
   {
-    "descrizione": "Trave HEB 200 in acciaio S275",
+    "descrizione": "Trave HEB200 in acciaio S275",
     "costo_kg": 2.50,
     "unita": "kg",
     "densita_kg_m3": 7850
   },
   {
-    "descrizione": "Trave HEB 300 in acciaio S275",
+    "descrizione": "Trave HEB300 in acciaio S275",
     "costo_kg": 2.35,
     "unita": "kg",
     "densita_kg_m3": 7850
