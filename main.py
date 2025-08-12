@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 19.3 - AI REALE (FIX FINALE RISPOSTA API)
+# VERSIONE 19.4 - AI REALE (FIX DEFINITIVO RISPOSTA API)
 
 import json
 import requests
@@ -55,16 +55,10 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
         
         json_response = response.json()
         
-        # ⬇️⬇️⬇️ ECCO LA CORREZIONE FINALE ⬇️⬇️⬇️
-        # Accediamo al primo elemento della lista 'candidates'
-        candidates = json_response.get("candidates", [])
-        if not candidates: raise KeyError("Nessun 'candidates' nella risposta.")
+        # ⬇️⬇️⬇️ ECCO LA CORREZIONE DEFINITIVA E COMPLETA ⬇️⬇️⬇️
+        # Questo è il percorso esatto per estrarre il testo dalla risposta di Gemini
+        text_response = json_response['candidates']['content']['parts']['text'].strip()
         
-        content = candidates.get("content", {})
-        parts = content.get("parts", [])
-        if not parts: raise KeyError("Nessuna 'parts' nel contenuto.")
-        
-        text_response = parts.get("text", "").strip()
         print(f"Risposta ricevuta da Gemini: {text_response}")
         return text_response
 
@@ -72,8 +66,8 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
         print(f"ERRORE: Chiamata API fallita: {e}")
         if is_json_response: return '{"is_consistent": false, "justification": "Chiamata API fallita."}'
         return "Errore nella chiamata API."
-    except (KeyError, IndexError) as e:
-        print(f"ERRORE: Risposta AI non valida: {e}. Risposta completa: {json_response}")
+    except (KeyError, IndexError, TypeError) as e:
+        print(f"ERRORE: Risposta AI non valida: {e}. Risposta completa: {json.dumps(json_response)}")
         if is_json_response: return '{"is_consistent": false, "justification": "Risposta AI non valida."}'
         return "Formato risposta AI non valido."
 
@@ -134,7 +128,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING REAL-AI VALIDATOR (v19.3) ---", flush=True)
+    print("--- STARTING REAL-AI VALIDATOR (v19.4) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
