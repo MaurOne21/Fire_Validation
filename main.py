@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 19.2 - AI REALE (URL CORRETTO E FIX BUG TUPLA)
+# VERSIONE 19.3 - AI REALE (FIX FINALE RISPOSTA API)
 
 import json
 import requests
@@ -11,15 +11,10 @@ from speckle_automate import AutomationContext, execute_automate_function
 GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
 WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
 
-# --- Nomi dei Gruppi Parametri (in Italiano) ---
 GRUPPO_TESTO = "Testo"
 GRUPPO_DATI_IDENTITA = "Dati identità"
-
-# --- Regole Antincendio ---
 FIRE_TARGET_CATEGORIES = ["Muri", "Pavimenti", "Telai Strutturali", "Pilastri", "Walls", "Floors", "Structural Framing", "Structural Columns"]
 FIRE_RATING_PARAM = "Fire_Rating"
-
-# --- Regole Costi ---
 COST_DESC_PARAM_NAME = "Descrizione"
 COST_UNIT_PARAM_NAME = "Costo_Unitario"
 #=====================================================================================
@@ -40,13 +35,12 @@ def find_all_elements(base_object) -> list:
 def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
     if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
         print("ATTENZIONE: Chiave API di Gemini non configurata.")
-        if is_json_response: return '{"justification": "AI non configurata."}'
+        if is_json_response: return '{"is_consistent": true, "justification": "AI non configurata."}'
         return "AI non configurata."
 
     print(f"Chiamando l'API di Gemini con prompt: {prompt[:80]}...")
     
     headers = {"Content-Type": "application/json"}
-    # ⬇️⬇️⬇️ ECCO LA CORREZIONE #1: URL UFFICIALE DI GEMINI ⬇️⬇️⬇️
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     final_prompt = prompt
@@ -56,28 +50,31 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
     payload = {"contents": [{"parts": [{"text": final_prompt}]}]}
 
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=30) # Aumentato timeout
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
         
         json_response = response.json()
         
+        # ⬇️⬇️⬇️ ECCO LA CORREZIONE FINALE ⬇️⬇️⬇️
+        # Accediamo al primo elemento della lista 'candidates'
         candidates = json_response.get("candidates", [])
         if not candidates: raise KeyError("Nessun 'candidates' nella risposta.")
+        
         content = candidates.get("content", {})
         parts = content.get("parts", [])
         if not parts: raise KeyError("Nessuna 'parts' nel contenuto.")
-        text_response = parts.get("text", "").strip()
         
+        text_response = parts.get("text", "").strip()
         print(f"Risposta ricevuta da Gemini: {text_response}")
         return text_response
 
     except requests.exceptions.RequestException as e:
         print(f"ERRORE: Chiamata API fallita: {e}")
-        if is_json_response: return '{"justification": "Chiamata API fallita."}'
+        if is_json_response: return '{"is_consistent": false, "justification": "Chiamata API fallita."}'
         return "Errore nella chiamata API."
     except (KeyError, IndexError) as e:
         print(f"ERRORE: Risposta AI non valida: {e}. Risposta completa: {json_response}")
-        if is_json_response: return '{"justification": "Risposta AI non valida."}'
+        if is_json_response: return '{"is_consistent": false, "justification": "Risposta AI non valida."}'
         return "Formato risposta AI non valido."
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
@@ -137,7 +134,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING REAL-AI VALIDATOR (v19.2) ---", flush=True)
+    print("--- STARTING REAL-AI VALIDATOR (v19.3) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -161,14 +158,10 @@ def main(ctx: AutomationContext) -> None:
             if fire_rating_errors:
                 ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
             if cost_warnings:
-                # ⬇️⬇️⬇️ ECCO LA CORREZIONE #2: SPACCHETTIAMO LA LISTA ⬇️⬇️⬇️
-                objects_with_cost_warnings = [item for item in cost_warnings]
-                messages_for_cost_warnings = [item for item in cost_warnings]
-                
                 ctx.attach_warning_to_objects(
                     category="Costo Non Congruo (AI)",
-                    affected_objects=objects_with_cost_warnings,
-                    message="Il costo unitario non è congruo secondo l'analisi AI." # Messaggio generico per compatibilità
+                    affected_objects=[item for item in cost_warnings],
+                    message="Il costo unitario non è congruo secondo l'analisi AI."
                 )
 
             summary_desc = "Validazione completata."
