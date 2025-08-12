@@ -1,38 +1,32 @@
 # main.py
-# VERSIONE 18.0 - REPORTING AVANZATO STABILE (HTML + CSV)
+# VERSIONE 19.0 - AI REALE (GEMINI API INTEGRATION)
 
 import json
 import requests
 import traceback
 import os
-import csv
-from datetime import datetime
-from collections import defaultdict
 from speckle_automate import AutomationContext, execute_automate_function
 
-try:
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-
 #============== CONFIGURAZIONE GLOBALE ==============================
+# ⬇️⬇️⬇️ INSERISCI QUI LA TUA VERA CHIAVE API DI GEMINI ⬇️⬇️⬇️
 GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
 WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
 
+# --- Nomi dei Gruppi Parametri (in Italiano) ---
 GRUPPO_TESTO = "Testo"
 GRUPPO_DATI_IDENTITA = "Dati identità"
+
+# --- Regole Antincendio ---
 FIRE_TARGET_CATEGORIES = ["Muri", "Pavimenti", "Telai Strutturali", "Pilastri", "Walls", "Floors", "Structural Framing", "Structural Columns"]
-FIRE_OPENING_CATEGORIES = ["Porte", "Finestre", "Doors", "Windows"]
 FIRE_RATING_PARAM = "Fire_Rating"
-FIRE_SEAL_PARAM = "FireSealInstalled"
+
+# --- Regole Costi ---
 COST_DESC_PARAM_NAME = "Descrizione"
 COST_UNIT_PARAM_NAME = "Costo_Unitario"
-BUDGETS = {"Muri": 120000, "Pavimenti": 50000}
 #=====================================================================================
 
-# (Funzioni helper e delle regole - nessuna modifica qui, sono già perfette)
+
+#============== FUNZIONI HELPER ======================================================
 def find_all_elements(base_object) -> list:
     elements = []
     element_container = getattr(base_object, '@elements', None) or getattr(base_object, 'elements', None)
@@ -40,21 +34,61 @@ def find_all_elements(base_object) -> list:
         for element in element_container: elements.extend(find_all_elements(element))
     elif isinstance(base_object, list):
         for item in base_object: elements.extend(find_all_elements(item))
-    if getattr(base_object, 'id', None) is not None and "Objects.Organization.Model" not in getattr(base_object, 'speckle_type', ''):
+    if getattr(base_object, 'id', None) is not in (None, "") and "Objects.Organization.Model" not in getattr(base_object, 'speckle_type', ''):
         elements.append(base_object)
     return elements
 
-def get_ai_suggestion(prompt: str) -> str:
-    if "Riassumi le priorità" in prompt:
-        return "Priorità alla revisione dei dati critici mancanti (es. Antincendio) e alla successiva analisi dei costi non congrui."
-    return '{"is_consistent": false, "suggestion": 50.0, "justification": "Costo non compilato o pari a zero."}'
+# ⬇️⬇️⬇️ LA NOSTRA NUOVA FUNZIONE CON AI REALE ⬇️⬇️⬇️
+def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
+    """
+    Invia un prompt all'API di Gemini e restituisce la risposta.
+    Se is_json_response è True, si aspetta un output JSON dall'AI.
+    """
+    if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
+        print("ATTENZIONE: Chiave API di Gemini non configurata. Salto chiamata AI.")
+        if is_json_response: return '{"justification": "AI non configurata."}'
+        return "AI non configurata."
+
+    print(f"Chiamando l'API di Gemini con prompt: {prompt[:80]}...")
+    
+    headers = {"Content-Type": "application/json"}
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+    
+    # Aggiungiamo istruzioni per l'output JSON se richiesto
+    final_prompt = prompt
+    if is_json_response:
+        final_prompt += "\nRispondi SOLO con un oggetto JSON valido, senza ```json o altre formattazioni."
+
+    payload = {"contents": [{"parts": [{"text": final_prompt}]}]}
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        response.raise_for_status()  # Lancia un errore per status code 4xx o 5xx
+        
+        json_response = response.json()
+        
+        # Estrai il testo dalla struttura di risposta di Gemini
+        text_response = json_response["candidates"]["content"]["parts"]["text"].strip()
+        print(f"Risposta ricevuta da Gemini: {text_response}")
+        return text_response
+
+    except requests.exceptions.RequestException as e:
+        print(f"ERRORE: La chiamata all'API di Gemini è fallita: {e}")
+        if is_json_response: return '{"justification": "Chiamata API fallita."}'
+        return "Errore nella chiamata API."
+    except (KeyError, IndexError) as e:
+        print(f"ERRORE: La risposta di Gemini non ha il formato atteso: {e}")
+        if is_json_response: return '{"justification": "Risposta AI non valida."}'
+        return "Formato risposta AI non valido."
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
+    # ... (identica a prima)
     if not WEBHOOK_URL or "INCOLLA_QUI" in WEBHOOK_URL: return
     embed = {"title": title, "description": description, "color": color, "fields": fields}
     try: requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
     except Exception as e: print(f"Errore invio notifica: {e}")
 
+#============== FUNZIONI DELLE REGOLE ================================================
 def run_fire_rating_check(all_elements: list) -> list:
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
     errors = []
@@ -67,34 +101,8 @@ def run_fire_rating_check(all_elements: list) -> list:
     print(f"Rule #1 Finished. {len(errors)} errors found.", flush=True)
     return errors
 
-def run_penetration_check(all_elements: list) -> list:
-    print("--- RUNNING RULE #3: FIRE COMPARTMENTATION ---", flush=True)
-    errors = []
-    for el in all_elements:
-        if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_OPENING_CATEGORIES):
-            value = el.properties['Parameters']['Instance Parameters'][GRUPPO_TESTO][FIRE_SEAL_PARAM]['value']
-            if not (value is True or str(value).lower() in ["si", "yes", "true", "1"]):
-                errors.append(el)
-    print(f"Rule #3 Finished. {len(errors)} errors found.", flush=True)
-    return errors
-
-def run_total_budget_check(elements: list) -> list:
-    print("--- RUNNING RULE #4: TOTAL BUDGET CHECK ---", flush=True)
-    costs_by_category = {cat: 0 for cat in BUDGETS.keys()}
-    for el in elements:
-        category = getattr(el, 'category', '')
-        if category in costs_by_category:
-            try:
-                cost_val = el.properties['Parameters']['Instance Parameters'][GRUPPO_TESTO][COST_UNIT_PARAM_NAME]['value']
-                metric = getattr(el, 'volume', getattr(el, 'area', 0))
-                costs_by_category[category] += (float(cost_val) if cost_val else 0) * metric
-            except (AttributeError, KeyError, TypeError, ValueError): continue
-    alerts = [f"Categoria '{cat}': superato budget di €{costs_by_category[cat] - BUDGETS[cat]:,.2f}" for cat in costs_by_category if costs_by_category[cat] > BUDGETS[cat]]
-    print(f"Rule #4 Finished. {len(alerts)} budget issues found.", flush=True)
-    return alerts
-
 def run_ai_cost_check(elements: list, price_list: list) -> list:
-    print("--- RUNNING RULE #5: AI COST CHECK ---", flush=True)
+    print("--- RUNNING RULE #5: AI COST CHECK (REAL AI) ---", flush=True)
     cost_warnings = []
     price_dict = {item['descrizione']: item for item in price_list}
     for el in elements:
@@ -112,62 +120,38 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
         ref_cost = price_list_entry.get("costo_nuovo") or price_list_entry.get("costo_kg")
         if ref_cost is None: continue
         
-        if model_cost <= 0.1:
-             ai_response_str = get_ai_suggestion("costo a zero")
-             try:
-                ai_response = json.loads(ai_response_str)
-                warning_message = f"AI: {ai_response.get('justification')}"
+        # Prompt "WOW" per l'AI
+        ai_prompt = (
+            f"Agisci come un esperto computista. Valuta questo costo unitario:\n"
+            f"- Descrizione: '{search_description}'\n"
+            f"- Costo nel Modello: €{model_cost:.2f}\n"
+            f"- Costo di Riferimento da Prezzario: €{ref_cost:.2f}\n"
+            f"Il costo nel modello è palesemente irragionevole (es. zero, troppo basso o troppo alto)? "
+            f"Giustifica la tua risposta. Fornisci anche un costo suggerito se lo ritieni errato.\n"
+            f"Fornisci la tua risposta in formato JSON con tre chiavi: 'is_consistent' (boolean), "
+            f"'justification' (stringa concisa), e 'suggested_cost' (numero o null)."
+        )
+        
+        ai_response_str = get_ai_suggestion(ai_prompt, is_json_response=True)
+        
+        try:
+            ai_response = json.loads(ai_response_str)
+            if not ai_response.get("is_consistent"):
+                justification = ai_response.get('justification', 'N/A')
+                suggestion = ai_response.get('suggested_cost')
+                warning_message = f"AI: {justification}"
+                if suggestion:
+                    warning_message += f" (Suggerito: ~€{suggestion:.2f})"
                 cost_warnings.append((el, warning_message))
-             except Exception as e: print(f"Errore interpretazione AI: {e}")
+        except (json.JSONDecodeError, AttributeError) as e:
+            print(f"Errore nell'interpretare la risposta JSON dell'AI: {e} -> Risposta ricevuta: {ai_response_str}")
             
     print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
     return cost_warnings
 
-#============== FUNZIONI DI REPORTING (RIATTIVATE) =================================
-def create_html_report(all_errors: list, run_id: str) -> str:
-    if not PLOTLY_AVAILABLE:
-        return "<h1>Plotly non è installato. Impossibile generare report grafico.</h1>"
-    if not all_errors:
-        return f"<h1>✅ Nessun Errore Rilevato</h1><p>Run ID: {run_id}</p>"
-
-    errors_by_rule = defaultdict(int)
-    errors_by_category = defaultdict(int)
-    for error in all_errors:
-        errors_by_rule[error["rule_description"]] += 1
-        if error["element_category"] != "N/A": errors_by_category[error["element_category"]] += 1
-    
-    fig = make_subplots(rows=1, cols=2, specs=[[{"type": "bar"}, {"type": "pie"}]],
-                        subplot_titles=("Errori per Regola", "Errori per Categoria"))
-    fig.add_trace(go.Bar(y=list(errors_by_rule.keys()), x=list(errors_by_rule.values()), orientation='h'), row=1, col=1)
-    if errors_by_category:
-        fig.add_trace(go.Pie(labels=list(errors_by_category.keys()), values=list(errors_by_category.values()), hole=.3), row=1, col=2)
-    
-    fig.update_layout(showlegend=False, title_text=f"Report di Validazione - Run {run_id}", margin=dict(t=100, b=20))
-    graphs_html = fig.to_html(full_html=False, include_plotlyjs='cdn')
-
-    table_header = "<tr><th>Regola</th><th>Livello</th><th>Categoria</th><th>ID Elemento</th><th>Messaggio</th></tr>"
-    table_rows = "".join([f"<tr><td>{e['rule_description']}</td><td>{e['error_level']}</td><td>{e['element_category']}</td><td>{e['element_id']}</td><td>{e['message']}</td></tr>" for e in all_errors])
-    table_html = f"<table border='1' style='width:100%; border-collapse: collapse; font-size: 12px;'>{table_header}{table_rows}</table>"
-
-    return f"<html><head><title>Speckle Report</title></head><body style='font-family: sans-serif;'>{graphs_html}<h2>Dettaglio Errori</h2>{table_html}</body></html>"
-
-def create_csv_export(all_errors: list, run_id: str, file_path: str):
-    if not all_errors: return
-    # Usiamo un set ridotto di campi, compatibile con quello che possiamo recuperare
-    fieldnames = ["timestamp", "run_id", "rule_id", "rule_description", "element_id", "element_category", "error_level", "message", "penalty_score"]
-    
-    with open(file_path, mode='w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for error in all_errors:
-            row = {"run_id": run_id, **error, "timestamp": datetime.utcnow().isoformat(),
-                   "penalty_score": 10 if error["error_level"] == "ERROR" else 3}
-            final_row = {key: row.get(key, "") for key in fieldnames}
-            writer.writerow(final_row)
-
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING RELEASE CANDIDATE (v18.0) ---", flush=True)
+    print("--- STARTING REAL-AI VALIDATOR (v19.0) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -183,48 +167,31 @@ def main(ctx: AutomationContext) -> None:
         print(f"Trovati {len(all_elements)} elementi.", flush=True)
         
         fire_rating_errors = run_fire_rating_check(all_elements)
-        penetration_errors = run_penetration_check(all_elements)
-        budget_alerts = run_total_budget_check(all_elements)
         cost_warnings = run_ai_cost_check(all_elements, price_list)
         
-        all_errors_structured = []
-        for el in fire_rating_errors:
-            all_errors_structured.append({"rule_id": "FIRE-01", "rule_description": "Dato Antincendio Mancante", "element_id": el.id, "element_category": getattr(el, 'category', 'N/A'), "error_level": "ERROR", "message": f"Manca '{FIRE_RATING_PARAM}'."})
-        for el in penetration_errors:
-            all_errors_structured.append({"rule_id": "FIRE-03", "rule_description": "Apertura non Sigillata", "element_id": el.id, "element_category": getattr(el, 'category', 'N/A'), "error_level": "WARNING", "message": f"'{FIRE_SEAL_PARAM}' non valido."})
-        for msg in budget_alerts:
-             all_errors_structured.append({"rule_id": "BUDGET-04", "rule_description": "Superamento Budget", "element_id": "N/A", "element_category": msg.split("'")[1], "error_level": "ERROR", "message": msg})
-        for el, ai_msg in cost_warnings:
-            all_errors_structured.append({"rule_id": "COST-05", "rule_description": "Costo Non Congruo (AI)", "element_id": el.id, "element_category": getattr(el, 'category', 'N/A'), "error_level": "WARNING", "message": ai_msg})
-
-        total_issues = len(all_errors_structured)
-        run_identifier = datetime.now().strftime('%Y%m%d-%H%M%S')
-        
-        # ⬇️⬇️⬇️ SALVATAGGIO DEI REPORT IN UNA DIRECTORY SICURA ⬇️⬇️⬇️
-        # Usiamo /tmp, una directory temporanea standard in ambienti Linux
-        temp_dir = "/tmp"
-        html_report_path = os.path.join(temp_dir, f"validation_report_{run_identifier}.html")
-        csv_export_path = os.path.join(temp_dir, f"powerbi_export_{run_identifier}.csv")
-        
-        with open(html_report_path, "w", encoding='utf-8') as f:
-            f.write(create_html_report(all_errors_structured, run_identifier))
-        create_csv_export(all_errors_structured, run_identifier, csv_export_path)
-        
-        ctx.store_result_blobs([html_report_path, csv_export_path])
-        print(f"Report HTML e CSV salvati e allegati al run.")
+        total_issues = len(fire_rating_errors) + len(cost_warnings)
 
         if total_issues > 0:
-            # (Logica di notifica e fallimento come prima)
-            if fire_rating_errors: ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
-            if penetration_errors: ctx.attach_warning_to_objects(category="Apertura non Sigillata", affected_objects=penetration_errors, message="Il parametro 'FireSealInstalled' non è valido.")
-            if cost_warnings: ctx.attach_warning_to_objects(category="Costo Non Congruo (AI)", affected_objects=[item[0] for item in cost_warnings], message="Il costo unitario non è congruo.")
+            if fire_rating_errors:
+                ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
+            if cost_warnings:
+                ctx.attach_warning_to_objects(
+                    category="Costo Non Congruo (AI)",
+                    affected_objects=[item for item in cost_warnings],
+                    message=[item for item in cost_warnings] # L'ambiente aggiornato potrebbe gestire liste
+                )
 
             summary_desc = "Validazione completata."
             fields, error_counts = [], {}
-            for error in all_errors_structured: error_counts[error["rule_description"]] = error_counts.get(error["rule_description"], 0) + 1
-            for rule_desc, count in error_counts.items(): fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
-            ai_suggestion = get_ai_suggestion("Riassumi le priorità.")
-            fields.append({"name": "🤖 Suggerimento AI", "value": ai_suggestion, "inline": False})
+            if fire_rating_errors: error_counts["Dato Antincendio Mancante"] = len(fire_rating_errors)
+            if cost_warnings: error_counts["Costo Non Congruo (AI)"] = len(cost_warnings)
+            for rule_desc, count in error_counts.items():
+                 fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
+            
+            ai_summary_prompt = f"Agisci come un Project Manager. Un controllo automatico ha trovato questi problemi: {', '.join(error_counts.keys())}. Riassumi le priorità strategiche in una frase concisa."
+            ai_suggestion = get_ai_suggestion(ai_summary_prompt, is_json_response=False)
+            fields.append({"name": "🤖 Analisi Strategica (AI)", "value": ai_suggestion, "inline": False})
+            
             send_webhook_notification(f"🚨 {total_issues} Problemi Rilevati", summary_desc, 15158332, fields)
             ctx.mark_run_failed(f"Validazione fallita con {total_issues} problemi.")
         else:
@@ -237,7 +204,7 @@ def main(ctx: AutomationContext) -> None:
         traceback.print_exc()
         ctx.mark_run_failed(error_message)
 
-    print("--- RELEASE CANDIDATE SCRIPT FINISHED ---", flush=True)
+    print("--- REAL-AI SCRIPT FINISHED ---", flush=True)
 
 if __name__ == "__main__":
     execute_automate_function(main)
