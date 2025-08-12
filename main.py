@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 15.0 - CHIAREZZA E DEBUG FINALE
+# VERSIONE 15.1 - LETTURA PARAMETRI UNIVERSALE
 
 import json
 import requests
@@ -40,27 +40,59 @@ def find_all_elements(base_object) -> list:
         elements.append(base_object)
     return elements
 
-def get_type_parameter_value(element, group_name: str, param_name: str):
-    try: return element.properties['Parameters']['Type Parameters'][group_name][param_name]['value']
-    except (AttributeError, KeyError, TypeError): return None
+def get_parameter(element, param_name: str, group_name: str, is_type_param: bool = False) -> any:
+    """
+    Funzione universale che cerca un parametro in tutti i modi possibili.
+    """
+    base_path_key = "Type Parameters" if is_type_param else "Instance Parameters"
+    
+    # Metodo 1: Percorso standard (properties -> Parameters -> ...)
+    try:
+        value = element.properties['Parameters'][base_path_key][group_name][param_name]['value']
+        if value is not None: return value
+    except (AttributeError, KeyError, TypeError):
+        pass
 
-def get_instance_parameter_value(element, group_name: str, param_name: str):
-    try: return element.properties['Parameters']['Instance Parameters'][group_name][param_name]['value']
-    except (AttributeError, KeyError, TypeError): return None
+    # Metodo 2: Accesso diretto a un parametro di primo livello dentro 'properties'
+    try:
+        param_obj = element.properties[param_name]
+        if 'value' in param_obj:
+            return param_obj['value']
+        return param_obj # A volte il valore è diretto
+    except (AttributeError, KeyError, TypeError):
+        pass
+
+    # Metodo 3: Ricerca "appiattita" in tutti i gruppi, se il gruppo specificato fallisce
+    try:
+        all_param_groups = element.properties['Parameters'][base_path_key]
+        for group in all_param_groups.values():
+            if param_name in group:
+                return group[param_name]['value']
+    except (AttributeError, KeyError, TypeError):
+        pass
+
+    return None
 
 def get_ai_suggestion(prompt: str) -> str:
     if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
         if "Riassumi le priorità" in prompt: return "AI non configurata."
         return '{"is_consistent": true, "justification": "AI non configurata."}'
+    
     print(f"Chiamata all'API di Gemini (simulata)...")
+
     if "Riassumi le priorità" in prompt:
         return "Priorità alla revisione dei dati antincendio mancanti e dei costi non congrui."
+
     try:
         model_cost_str = prompt.split("Costo Modello: €")[1].split(" ")[0]
         model_cost = float(model_cost_str)
-        if model_cost <= 0.1: return '{"is_consistent": false, "suggestion": 45.50, "justification": "Costo non compilato o pari a zero."}'
-        if model_cost < 30.0: return '{"is_consistent": false, "suggestion": 45.50, "justification": "Costo palesemente troppo basso."}'
-    except (IndexError, ValueError): pass
+        if model_cost <= 0.1: 
+            return '{"is_consistent": false, "suggestion": 45.50, "justification": "Costo unitario non compilato o pari a zero."}'
+        if model_cost < 30.0:
+            return '{"is_consistent": false, "suggestion": 45.50, "justification": "Costo palesemente troppo basso."}'
+    except (IndexError, ValueError):
+        pass
+
     return '{"is_consistent": true, "justification": "Costo congruo."}'
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
@@ -73,8 +105,7 @@ def send_webhook_notification(title: str, description: str, color: int, fields: 
 #============== FUNZIONI DELLE REGOLE ================================================
 def run_fire_rating_check(all_elements: list) -> list:
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
-    # ⬇️⬇️⬇️ Corretto il refuso: usato GRUPPO_TESTO ⬇️⬇️⬇️
-    errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_TARGET_CATEGORIES) and not get_instance_parameter_value(el, GRUPPO_TESTO, FIRE_RATING_PARAM)]
+    errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_TARGET_CATEGORIES) and not get_parameter(el, FIRE_RATING_PARAM, GRUPPO_TESTO, is_type_param=False)]
     print(f"Rule #1 Finished. {len(errors)} errors found.", flush=True)
     return errors
 
@@ -83,7 +114,7 @@ def run_penetration_check(all_elements: list) -> list:
     errors = []
     for el in all_elements:
         if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_OPENING_CATEGORIES):
-            value = get_instance_parameter_value(el, GRUPPO_TESTO, FIRE_SEAL_PARAM)
+            value = get_parameter(el, FIRE_SEAL_PARAM, GRUPPO_TESTO, is_type_param=False)
             if not (value is True or str(value).lower() in ["si", "yes", "true", "1"]):
                 errors.append(el)
     print(f"Rule #3 Finished. {len(errors)} errors found.", flush=True)
@@ -95,7 +126,7 @@ def run_total_budget_check(elements: list) -> list:
     for el in elements:
         category = getattr(el, 'category', '')
         if category in costs_by_category:
-            cost_val = get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME)
+            cost_val = get_parameter(el, COST_UNIT_PARAM_NAME, GRUPPO_TESTO, is_type_param=False)
             metric = getattr(el, 'volume', getattr(el, 'area', 0))
             costs_by_category[category] += (float(cost_val) if cost_val else 0) * metric
     alerts = [f"Categoria '{cat}': superato budget di €{costs_by_category[cat] - BUDGETS[cat]:,.2f}" for cat in costs_by_category if costs_by_category[cat] > BUDGETS[cat]]
@@ -107,25 +138,10 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
     cost_warnings = []
     price_dict = {item['descrizione']: item for item in price_list}
     for el in elements:
-        # --- BLOCCO DI DEBUG ATTIVO ---
-        item_description = get_type_parameter_value(el, GRUPPO_DATI_IDENTITA, COST_DESC_PARAM_NAME)
-        cost_value_raw = get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME)
-
-        if item_description or cost_value_raw is not None:
-            print(f"\n[DEBUG COST] Ispezione elemento ID: {el.id}, Categoria: {getattr(el, 'category', 'N/A')}")
-            print(f"  > `Descrizione` (da Tipo): '{item_description}'")
-            print(f"  > `Costo_Unitario` (da Istanza): '{cost_value_raw}'")
-            if not item_description: print("  > 🔴 MOTIVO SCARTO: 'Descrizione' mancante o vuota.")
-            elif cost_value_raw is None: print("  > 🔴 MOTIVO SCARTO: 'Costo_Unitario' mancante.")
-            else:
-                search_description = item_description + " (DEMOLIZIONE)" if (getattr(el, 'phaseDemolished', 'N/A') != 'N/A' and getattr(el, 'phaseDemolished', 'N/A') != 'None') else item_description
-                if not price_dict.get(search_description):
-                    print(f"  > 🔴 MOTIVO SCARTO: La descrizione '{search_description}' non è nel prezzario.json.")
-                else:
-                    print("  > ✅ CORRISPONDENZA TROVATA! Elemento valido per l'analisi AI.")
-        
+        item_description = get_parameter(el, COST_DESC_PARAM_NAME, GRUPPO_DATI_IDENTITA, is_type_param=True)
         if not item_description: continue
-        try: model_cost = float(cost_value_raw)
+        try:
+            model_cost = float(get_parameter(el, COST_UNIT_PARAM_NAME, GRUPPO_TESTO, is_type_param=False))
         except (ValueError, TypeError): continue
         
         phase_demolished = getattr(el, 'phaseDemolished', 'N/A')
@@ -134,8 +150,11 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
         price_list_entry = price_dict.get(search_description)
         if not price_list_entry: continue
         
-        if 'densita_kg_m3' in price_list_entry: _, ref_cost, _ = ("costo_demolizione_kg", price_list_entry.get("costo_demolizione_kg"), "€/kg") if is_demolished else ("costo_kg", price_list_entry.get("costo_kg"), "€/kg")
-        else: _, ref_cost, _ = ("costo_demolizione", price_list_entry.get("costo_demolizione"), f"€/{price_list_entry.get('unita', 'cad')}") if is_demolished else ("costo_nuovo", price_list_entry.get("costo_nuovo"), f"€/{price_list_entry.get('unita', 'cad')}")
+        if 'densita_kg_m3' in price_list_entry:
+            _, ref_cost, _ = ("costo_demolizione_kg", price_list_entry.get("costo_demolizione_kg"), "€/kg") if is_demolished else ("costo_kg", price_list_entry.get("costo_kg"), "€/kg")
+        else:
+            _, ref_cost, _ = ("costo_demolizione", price_list_entry.get("costo_demolizione"), f"€/{price_list_entry.get('unita', 'cad')}") if is_demolished else ("costo_nuovo", price_list_entry.get("costo_nuovo"), f"€/{price_list_entry.get('unita', 'cad')}")
+        
         if ref_cost is None: continue
         
         ai_prompt = (f"Valuta: '{search_description}', Costo Modello: €{model_cost:.2f}, Riferimento: €{ref_cost:.2f}")
@@ -151,10 +170,9 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
     print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
     return cost_warnings
 
-
 #============== ORCHESTRATORE PRINCIPALE (GOLDEN MASTER) =======================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING GOLDEN MASTER VALIDATOR (v15.0) ---", flush=True)
+    print("--- STARTING GOLDEN MASTER VALIDATOR (v15.1) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
