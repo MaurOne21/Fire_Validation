@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # 1. Fa il checkout del tuo codice, inclusi main.py e functionSchema.json
-      - uses: actions/checkout@v4.1.7
+      - uses: actions/checkout@v5.0.0
 
       # --- SOLUZIONE DEFINITIVA ---
       # 2. Copiamo il file dal nostro repository alla cartella 'home' del runner,
