@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 17.1 - SPECKLECON READY
+# VERSIONE 18.0 - REPORTING AVANZATO STABILE (HTML + CSV)
 
 import json
 import requests
@@ -32,7 +32,7 @@ COST_UNIT_PARAM_NAME = "Costo_Unitario"
 BUDGETS = {"Muri": 120000, "Pavimenti": 50000}
 #=====================================================================================
 
-# (Funzioni helper)
+# (Funzioni helper e delle regole - nessuna modifica qui, sono già perfette)
 def find_all_elements(base_object) -> list:
     elements = []
     element_container = getattr(base_object, '@elements', None) or getattr(base_object, 'elements', None)
@@ -45,11 +45,8 @@ def find_all_elements(base_object) -> list:
     return elements
 
 def get_ai_suggestion(prompt: str) -> str:
-    # ⬇️⬇️⬇️ Correzione Finale ⬇️⬇️⬇️
     if "Riassumi le priorità" in prompt:
         return "Priorità alla revisione dei dati critici mancanti (es. Antincendio) e alla successiva analisi dei costi non congrui."
-    
-    # Simulazione per la validazione dei costi
     return '{"is_consistent": false, "suggestion": 50.0, "justification": "Costo non compilato o pari a zero."}'
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
@@ -58,7 +55,6 @@ def send_webhook_notification(title: str, description: str, color: int, fields: 
     try: requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
     except Exception as e: print(f"Errore invio notifica: {e}")
 
-# (Funzioni delle regole - complete e pulite)
 def run_fire_rating_check(all_elements: list) -> list:
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
     errors = []
@@ -116,7 +112,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
         ref_cost = price_list_entry.get("costo_nuovo") or price_list_entry.get("costo_kg")
         if ref_cost is None: continue
         
-        if model_cost <= 0.1: # Cattura costi a zero o molto bassi
+        if model_cost <= 0.1:
              ai_response_str = get_ai_suggestion("costo a zero")
              try:
                 ai_response = json.loads(ai_response_str)
@@ -127,11 +123,51 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
     print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
     return cost_warnings
 
-# (Funzioni di reporting - non più necessarie in questa versione stabile)
+#============== FUNZIONI DI REPORTING (RIATTIVATE) =================================
+def create_html_report(all_errors: list, run_id: str) -> str:
+    if not PLOTLY_AVAILABLE:
+        return "<h1>Plotly non è installato. Impossibile generare report grafico.</h1>"
+    if not all_errors:
+        return f"<h1>✅ Nessun Errore Rilevato</h1><p>Run ID: {run_id}</p>"
+
+    errors_by_rule = defaultdict(int)
+    errors_by_category = defaultdict(int)
+    for error in all_errors:
+        errors_by_rule[error["rule_description"]] += 1
+        if error["element_category"] != "N/A": errors_by_category[error["element_category"]] += 1
+    
+    fig = make_subplots(rows=1, cols=2, specs=[[{"type": "bar"}, {"type": "pie"}]],
+                        subplot_titles=("Errori per Regola", "Errori per Categoria"))
+    fig.add_trace(go.Bar(y=list(errors_by_rule.keys()), x=list(errors_by_rule.values()), orientation='h'), row=1, col=1)
+    if errors_by_category:
+        fig.add_trace(go.Pie(labels=list(errors_by_category.keys()), values=list(errors_by_category.values()), hole=.3), row=1, col=2)
+    
+    fig.update_layout(showlegend=False, title_text=f"Report di Validazione - Run {run_id}", margin=dict(t=100, b=20))
+    graphs_html = fig.to_html(full_html=False, include_plotlyjs='cdn')
+
+    table_header = "<tr><th>Regola</th><th>Livello</th><th>Categoria</th><th>ID Elemento</th><th>Messaggio</th></tr>"
+    table_rows = "".join([f"<tr><td>{e['rule_description']}</td><td>{e['error_level']}</td><td>{e['element_category']}</td><td>{e['element_id']}</td><td>{e['message']}</td></tr>" for e in all_errors])
+    table_html = f"<table border='1' style='width:100%; border-collapse: collapse; font-size: 12px;'>{table_header}{table_rows}</table>"
+
+    return f"<html><head><title>Speckle Report</title></head><body style='font-family: sans-serif;'>{graphs_html}<h2>Dettaglio Errori</h2>{table_html}</body></html>"
+
+def create_csv_export(all_errors: list, run_id: str, file_path: str):
+    if not all_errors: return
+    # Usiamo un set ridotto di campi, compatibile con quello che possiamo recuperare
+    fieldnames = ["timestamp", "run_id", "rule_id", "rule_description", "element_id", "element_category", "error_level", "message", "penalty_score"]
+    
+    with open(file_path, mode='w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for error in all_errors:
+            row = {"run_id": run_id, **error, "timestamp": datetime.utcnow().isoformat(),
+                   "penalty_score": 10 if error["error_level"] == "ERROR" else 3}
+            final_row = {key: row.get(key, "") for key in fieldnames}
+            writer.writerow(final_row)
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING RELEASE CANDIDATE (v17.1) ---", flush=True)
+    print("--- STARTING RELEASE CANDIDATE (v18.0) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -151,32 +187,44 @@ def main(ctx: AutomationContext) -> None:
         budget_alerts = run_total_budget_check(all_elements)
         cost_warnings = run_ai_cost_check(all_elements, price_list)
         
-        total_issues = len(fire_rating_errors) + len(penetration_errors) + len(budget_alerts) + len(cost_warnings)
+        all_errors_structured = []
+        for el in fire_rating_errors:
+            all_errors_structured.append({"rule_id": "FIRE-01", "rule_description": "Dato Antincendio Mancante", "element_id": el.id, "element_category": getattr(el, 'category', 'N/A'), "error_level": "ERROR", "message": f"Manca '{FIRE_RATING_PARAM}'."})
+        for el in penetration_errors:
+            all_errors_structured.append({"rule_id": "FIRE-03", "rule_description": "Apertura non Sigillata", "element_id": el.id, "element_category": getattr(el, 'category', 'N/A'), "error_level": "WARNING", "message": f"'{FIRE_SEAL_PARAM}' non valido."})
+        for msg in budget_alerts:
+             all_errors_structured.append({"rule_id": "BUDGET-04", "rule_description": "Superamento Budget", "element_id": "N/A", "element_category": msg.split("'")[1], "error_level": "ERROR", "message": msg})
+        for el, ai_msg in cost_warnings:
+            all_errors_structured.append({"rule_id": "COST-05", "rule_description": "Costo Non Congruo (AI)", "element_id": el.id, "element_category": getattr(el, 'category', 'N/A'), "error_level": "WARNING", "message": ai_msg})
+
+        total_issues = len(all_errors_structured)
+        run_identifier = datetime.now().strftime('%Y%m%d-%H%M%S')
+        
+        # ⬇️⬇️⬇️ SALVATAGGIO DEI REPORT IN UNA DIRECTORY SICURA ⬇️⬇️⬇️
+        # Usiamo /tmp, una directory temporanea standard in ambienti Linux
+        temp_dir = "/tmp"
+        html_report_path = os.path.join(temp_dir, f"validation_report_{run_identifier}.html")
+        csv_export_path = os.path.join(temp_dir, f"powerbi_export_{run_identifier}.csv")
+        
+        with open(html_report_path, "w", encoding='utf-8') as f:
+            f.write(create_html_report(all_errors_structured, run_identifier))
+        create_csv_export(all_errors_structured, run_identifier, csv_export_path)
+        
+        ctx.store_result_blobs([html_report_path, csv_export_path])
+        print(f"Report HTML e CSV salvati e allegati al run.")
 
         if total_issues > 0:
-            if fire_rating_errors:
-                ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
-            if penetration_errors:
-                ctx.attach_warning_to_objects(category="Apertura non Sigillata", affected_objects=penetration_errors, message="Il parametro 'FireSealInstalled' non è valido.")
-            if cost_warnings:
-                ctx.attach_warning_to_objects(
-                    category="Costo Non Congruo (AI)",
-                    affected_objects=[item[0] for item in cost_warnings],
-                    message="Il costo unitario non è congruo (es. zero o troppo basso)."
-                )
+            # (Logica di notifica e fallimento come prima)
+            if fire_rating_errors: ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
+            if penetration_errors: ctx.attach_warning_to_objects(category="Apertura non Sigillata", affected_objects=penetration_errors, message="Il parametro 'FireSealInstalled' non è valido.")
+            if cost_warnings: ctx.attach_warning_to_objects(category="Costo Non Congruo (AI)", affected_objects=[item[0] for item in cost_warnings], message="Il costo unitario non è congruo.")
 
             summary_desc = "Validazione completata."
             fields, error_counts = [], {}
-            if fire_rating_errors: error_counts["Dato Antincendio Mancante"] = len(fire_rating_errors)
-            if penetration_errors: error_counts["Apertura non Sigillata"] = len(penetration_errors)
-            if budget_alerts: error_counts["Superamento Budget"] = len(budget_alerts)
-            if cost_warnings: error_counts["Costo Non Congruo (AI)"] = len(cost_warnings)
-            for rule_desc, count in error_counts.items():
-                 fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
-            
+            for error in all_errors_structured: error_counts[error["rule_description"]] = error_counts.get(error["rule_description"], 0) + 1
+            for rule_desc, count in error_counts.items(): fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
             ai_suggestion = get_ai_suggestion("Riassumi le priorità.")
             fields.append({"name": "🤖 Suggerimento AI", "value": ai_suggestion, "inline": False})
-            
             send_webhook_notification(f"🚨 {total_issues} Problemi Rilevati", summary_desc, 15158332, fields)
             ctx.mark_run_failed(f"Validazione fallita con {total_issues} problemi.")
         else:
