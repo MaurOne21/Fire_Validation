@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 19.0 - AI REALE (GEMINI API INTEGRATION)
+# VERSIONE 19.1 - AI REALE (SINTASSI CORRETTA)
 
 import json
 import requests
@@ -8,7 +8,6 @@ import os
 from speckle_automate import AutomationContext, execute_automate_function
 
 #============== CONFIGURAZIONE GLOBALE ==============================
-# ⬇️⬇️⬇️ INSERISCI QUI LA TUA VERA CHIAVE API DI GEMINI ⬇️⬇️⬇️
 GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
 WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
 
@@ -34,18 +33,16 @@ def find_all_elements(base_object) -> list:
         for element in element_container: elements.extend(find_all_elements(element))
     elif isinstance(base_object, list):
         for item in base_object: elements.extend(find_all_elements(item))
-    if getattr(base_object, 'id', None) is not in (None, "") and "Objects.Organization.Model" not in getattr(base_object, 'speckle_type', ''):
+    
+    # ⬇️⬇️⬇️ ECCO LA CORREZIONE ⬇️⬇️⬇️
+    element_id = getattr(base_object, 'id', None)
+    if element_id not in (None, "") and "Objects.Organization.Model" not in getattr(base_object, 'speckle_type', ''):
         elements.append(base_object)
     return elements
 
-# ⬇️⬇️⬇️ LA NOSTRA NUOVA FUNZIONE CON AI REALE ⬇️⬇️⬇️
 def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
-    """
-    Invia un prompt all'API di Gemini e restituisce la risposta.
-    Se is_json_response è True, si aspetta un output JSON dall'AI.
-    """
     if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
-        print("ATTENZIONE: Chiave API di Gemini non configurata. Salto chiamata AI.")
+        print("ATTENZIONE: Chiave API di Gemini non configurata.")
         if is_json_response: return '{"justification": "AI non configurata."}'
         return "AI non configurata."
 
@@ -54,7 +51,6 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
     headers = {"Content-Type": "application/json"}
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
     
-    # Aggiungiamo istruzioni per l'output JSON se richiesto
     final_prompt = prompt
     if is_json_response:
         final_prompt += "\nRispondi SOLO con un oggetto JSON valido, senza ```json o altre formattazioni."
@@ -63,12 +59,21 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
 
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=20)
-        response.raise_for_status()  # Lancia un errore per status code 4xx o 5xx
+        response.raise_for_status()
         
         json_response = response.json()
         
-        # Estrai il testo dalla struttura di risposta di Gemini
-        text_response = json_response["candidates"]["content"]["parts"]["text"].strip()
+        # Percorso robusto per estrarre il testo
+        candidates = json_response.get("candidates", [])
+        if not candidates:
+            raise KeyError("Nessun 'candidates' nella risposta.")
+        
+        content = candidates.get("content", {})
+        parts = content.get("parts", [])
+        if not parts:
+            raise KeyError("Nessuna 'parts' nel contenuto.")
+            
+        text_response = parts.get("text", "").strip()
         print(f"Risposta ricevuta da Gemini: {text_response}")
         return text_response
 
@@ -77,12 +82,11 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
         if is_json_response: return '{"justification": "Chiamata API fallita."}'
         return "Errore nella chiamata API."
     except (KeyError, IndexError) as e:
-        print(f"ERRORE: La risposta di Gemini non ha il formato atteso: {e}")
+        print(f"ERRORE: La risposta di Gemini non ha il formato atteso: {e}. Risposta completa: {json_response}")
         if is_json_response: return '{"justification": "Risposta AI non valida."}'
         return "Formato risposta AI non valido."
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
-    # ... (identica a prima)
     if not WEBHOOK_URL or "INCOLLA_QUI" in WEBHOOK_URL: return
     embed = {"title": title, "description": description, "color": color, "fields": fields}
     try: requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
@@ -120,7 +124,6 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
         ref_cost = price_list_entry.get("costo_nuovo") or price_list_entry.get("costo_kg")
         if ref_cost is None: continue
         
-        # Prompt "WOW" per l'AI
         ai_prompt = (
             f"Agisci come un esperto computista. Valuta questo costo unitario:\n"
             f"- Descrizione: '{search_description}'\n"
@@ -128,7 +131,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
             f"- Costo di Riferimento da Prezzario: €{ref_cost:.2f}\n"
             f"Il costo nel modello è palesemente irragionevole (es. zero, troppo basso o troppo alto)? "
             f"Giustifica la tua risposta. Fornisci anche un costo suggerito se lo ritieni errato.\n"
-            f"Fornisci la tua risposta in formato JSON con tre chiavi: 'is_consistent' (boolean), "
+            f"La tua risposta DEVE essere un oggetto JSON con tre chiavi: 'is_consistent' (boolean), "
             f"'justification' (stringa concisa), e 'suggested_cost' (numero o null)."
         )
         
@@ -144,14 +147,14 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
                     warning_message += f" (Suggerito: ~€{suggestion:.2f})"
                 cost_warnings.append((el, warning_message))
         except (json.JSONDecodeError, AttributeError) as e:
-            print(f"Errore nell'interpretare la risposta JSON dell'AI: {e} -> Risposta ricevuta: {ai_response_str}")
+            print(f"ERRORE nell'interpretare la risposta JSON dell'AI: {e} -> Risposta ricevuta: {ai_response_str}")
             
     print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
     return cost_warnings
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING REAL-AI VALIDATOR (v19.0) ---", flush=True)
+    print("--- STARTING REAL-AI VALIDATOR (v19.1) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -178,7 +181,7 @@ def main(ctx: AutomationContext) -> None:
                 ctx.attach_warning_to_objects(
                     category="Costo Non Congruo (AI)",
                     affected_objects=[item for item in cost_warnings],
-                    message=[item for item in cost_warnings] # L'ambiente aggiornato potrebbe gestire liste
+                    message="Il costo unitario non è congruo secondo l'analisi AI."
                 )
 
             summary_desc = "Validazione completata."
