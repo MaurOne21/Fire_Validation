@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 19.7 - AI REALE E FUNZIONANTE (FIX DEFINITIVO)
+# VERSIONE 19.8 - RELEASE CANDIDATE FUNZIONANTE
 
 import json
 import requests
@@ -34,7 +34,7 @@ def find_all_elements(base_object) -> list:
 
 def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
     if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
-        if is_json_response: return '{"justification": "AI non configurata."}'
+        if is_json_response: return '{"is_consistent": false, "justification": "AI non configurata."}'
         return "AI non configurata."
 
     print(f"Chiamando l'API di Gemini...")
@@ -53,7 +53,7 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
         response.raise_for_status()
         json_response = response.json()
         
-        # ⬇️⬇️⬇️ ECCO LA CORREZIONE BASATA SUL LOG DI DIAGNOSI ⬇️⬇️⬇️
+        # ⬇️⬇️⬇️ ECCO LA CORREZIONE #1 - PERCORSO DI LETTURA DEFINITIVO ⬇️⬇️⬇️
         text_response = json_response['candidates']['content']['parts']['text'].strip()
         
         print(f"Risposta ricevuta da Gemini: {text_response}")
@@ -125,7 +125,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING REAL-AI VALIDATOR (v19.7) ---", flush=True)
+    print("--- STARTING REAL-AI VALIDATOR (v19.8) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -149,9 +149,12 @@ def main(ctx: AutomationContext) -> None:
             if fire_rating_errors:
                 ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
             if cost_warnings:
+                # ⬇️⬇️⬇️ ECCO LA CORREZIONE #2 - SPACCHETTIAMO LA LISTA ⬇️⬇️⬇️
+                objects_with_cost_warnings = [item for item in cost_warnings]
+                
                 ctx.attach_warning_to_objects(
                     category="Costo Non Congruo (AI)",
-                    affected_objects=[item for item in cost_warnings],
+                    affected_objects=objects_with_cost_warnings,
                     message="Il costo unitario non è congruo secondo l'analisi AI."
                 )
 
@@ -162,7 +165,7 @@ def main(ctx: AutomationContext) -> None:
             for rule_desc, count in error_counts.items():
                  fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
             
-            ai_summary_prompt = f"Sei un Project Manager. Un controllo ha trovato questi problemi: {', '.join(error_counts.keys())}. Riassumi le priorità in una frase."
+            ai_summary_prompt = f"Sei un Project Manager. Un controllo ha trovato: {', '.join(error_counts.keys())}. Riassumi le priorità in una frase."
             ai_suggestion = get_ai_suggestion(ai_summary_prompt, is_json_response=False)
             fields.append({"name": "🤖 Analisi Strategica (AI)", "value": ai_suggestion, "inline": False})
             
