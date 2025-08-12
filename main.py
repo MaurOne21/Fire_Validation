@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 17.0 - RELEASE CANDIDATE (TUTTO FUNZIONANTE)
+# VERSIONE 17.1 - SPECKLECON READY
 
 import json
 import requests
@@ -24,6 +24,7 @@ WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVs
 GRUPPO_TESTO = "Testo"
 GRUPPO_DATI_IDENTITA = "Dati identità"
 FIRE_TARGET_CATEGORIES = ["Muri", "Pavimenti", "Telai Strutturali", "Pilastri", "Walls", "Floors", "Structural Framing", "Structural Columns"]
+FIRE_OPENING_CATEGORIES = ["Porte", "Finestre", "Doors", "Windows"]
 FIRE_RATING_PARAM = "Fire_Rating"
 FIRE_SEAL_PARAM = "FireSealInstalled"
 COST_DESC_PARAM_NAME = "Descrizione"
@@ -44,8 +45,11 @@ def find_all_elements(base_object) -> list:
     return elements
 
 def get_ai_suggestion(prompt: str) -> str:
-    # ... (simulazione)
-    if "Project Manager" in prompt: return "Priorità alla revisione dei costi e dei dati antincendio."
+    # ⬇️⬇️⬇️ Correzione Finale ⬇️⬇️⬇️
+    if "Riassumi le priorità" in prompt:
+        return "Priorità alla revisione dei dati critici mancanti (es. Antincendio) e alla successiva analisi dei costi non congrui."
+    
+    # Simulazione per la validazione dei costi
     return '{"is_consistent": false, "suggestion": 50.0, "justification": "Costo non compilato o pari a zero."}'
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
@@ -54,7 +58,7 @@ def send_webhook_notification(title: str, description: str, color: int, fields: 
     try: requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
     except Exception as e: print(f"Errore invio notifica: {e}")
 
-# (Funzioni delle regole)
+# (Funzioni delle regole - complete e pulite)
 def run_fire_rating_check(all_elements: list) -> list:
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
     errors = []
@@ -67,6 +71,32 @@ def run_fire_rating_check(all_elements: list) -> list:
     print(f"Rule #1 Finished. {len(errors)} errors found.", flush=True)
     return errors
 
+def run_penetration_check(all_elements: list) -> list:
+    print("--- RUNNING RULE #3: FIRE COMPARTMENTATION ---", flush=True)
+    errors = []
+    for el in all_elements:
+        if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_OPENING_CATEGORIES):
+            value = el.properties['Parameters']['Instance Parameters'][GRUPPO_TESTO][FIRE_SEAL_PARAM]['value']
+            if not (value is True or str(value).lower() in ["si", "yes", "true", "1"]):
+                errors.append(el)
+    print(f"Rule #3 Finished. {len(errors)} errors found.", flush=True)
+    return errors
+
+def run_total_budget_check(elements: list) -> list:
+    print("--- RUNNING RULE #4: TOTAL BUDGET CHECK ---", flush=True)
+    costs_by_category = {cat: 0 for cat in BUDGETS.keys()}
+    for el in elements:
+        category = getattr(el, 'category', '')
+        if category in costs_by_category:
+            try:
+                cost_val = el.properties['Parameters']['Instance Parameters'][GRUPPO_TESTO][COST_UNIT_PARAM_NAME]['value']
+                metric = getattr(el, 'volume', getattr(el, 'area', 0))
+                costs_by_category[category] += (float(cost_val) if cost_val else 0) * metric
+            except (AttributeError, KeyError, TypeError, ValueError): continue
+    alerts = [f"Categoria '{cat}': superato budget di €{costs_by_category[cat] - BUDGETS[cat]:,.2f}" for cat in costs_by_category if costs_by_category[cat] > BUDGETS[cat]]
+    print(f"Rule #4 Finished. {len(alerts)} budget issues found.", flush=True)
+    return alerts
+
 def run_ai_cost_check(elements: list, price_list: list) -> list:
     print("--- RUNNING RULE #5: AI COST CHECK ---", flush=True)
     cost_warnings = []
@@ -78,8 +108,6 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
             model_cost = float(model_cost_raw)
             if not item_description: continue
         except (AttributeError, KeyError, TypeError, ValueError): continue
-        
-        print(f"✅ Elemento {el.id} VALIDO. Desc: '{item_description}', Costo: {model_cost}")
         
         search_description = item_description
         price_list_entry = price_dict.get(search_description)
@@ -99,18 +127,11 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
     print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
     return cost_warnings
 
-# (Funzioni di reporting)
-def create_html_report(all_errors: list, run_id: str) -> str:
-    # ... (come prima)
-    return "<html>...</html>"
-
-def create_csv_export(all_errors: list, run_id: str, file_path: str):
-    # ... (come prima)
-    pass
+# (Funzioni di reporting - non più necessarie in questa versione stabile)
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING RELEASE CANDIDATE (v17.0) ---", flush=True)
+    print("--- STARTING RELEASE CANDIDATE (v17.1) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -126,32 +147,36 @@ def main(ctx: AutomationContext) -> None:
         print(f"Trovati {len(all_elements)} elementi.", flush=True)
         
         fire_rating_errors = run_fire_rating_check(all_elements)
+        penetration_errors = run_penetration_check(all_elements)
+        budget_alerts = run_total_budget_check(all_elements)
         cost_warnings = run_ai_cost_check(all_elements, price_list)
         
-        total_issues = len(fire_rating_errors) + len(cost_warnings)
+        total_issues = len(fire_rating_errors) + len(penetration_errors) + len(budget_alerts) + len(cost_warnings)
 
         if total_issues > 0:
             if fire_rating_errors:
                 ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
+            if penetration_errors:
+                ctx.attach_warning_to_objects(category="Apertura non Sigillata", affected_objects=penetration_errors, message="Il parametro 'FireSealInstalled' non è valido.")
             if cost_warnings:
-                # ⬇️⬇️⬇️ ECCO IL FIX FONDAMENTALE ⬇️⬇️⬇️
-                # La vecchia versione di automate vuole un singolo messaggio, non una lista
-                # Quindi, anche se potremmo avere messaggi diversi per ogni oggetto, per compatibilità ne usiamo uno generico.
                 ctx.attach_warning_to_objects(
                     category="Costo Non Congruo (AI)",
                     affected_objects=[item[0] for item in cost_warnings],
-                    message="Il costo unitario di questo elemento non è congruo (es. zero o troppo basso)."
+                    message="Il costo unitario non è congruo (es. zero o troppo basso)."
                 )
 
-            # (Logica di notifica come prima)
             summary_desc = "Validazione completata."
             fields, error_counts = [], {}
             if fire_rating_errors: error_counts["Dato Antincendio Mancante"] = len(fire_rating_errors)
+            if penetration_errors: error_counts["Apertura non Sigillata"] = len(penetration_errors)
+            if budget_alerts: error_counts["Superamento Budget"] = len(budget_alerts)
             if cost_warnings: error_counts["Costo Non Congruo (AI)"] = len(cost_warnings)
             for rule_desc, count in error_counts.items():
                  fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
+            
             ai_suggestion = get_ai_suggestion("Riassumi le priorità.")
             fields.append({"name": "🤖 Suggerimento AI", "value": ai_suggestion, "inline": False})
+            
             send_webhook_notification(f"🚨 {total_issues} Problemi Rilevati", summary_desc, 15158332, fields)
             ctx.mark_run_failed(f"Validazione fallita con {total_issues} problemi.")
         else:
