@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 19.8 - RELEASE CANDIDATE FUNZIONANTE
+# VERSIONE 19.9 - BIMEET&GREET EDITION (STABILE E FUNZIONANTE)
 
 import json
 import requests
@@ -125,7 +125,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING REAL-AI VALIDATOR (v19.8) ---", flush=True)
+    print("--- STARTING BIMeet&Greet VALIDATOR (v19.9) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -181,7 +181,7 @@ def main(ctx: AutomationContext) -> None:
         traceback.print_exc()
         ctx.mark_run_failed(error_message)
 
-    print("--- REAL-AI SCRIPT FINISHED ---", flush=True)
+    print("--- BIMeet&Greet SCRIPT FINISHED ---", flush=True)
 
 if __name__ == "__main__":
     execute_automate_function(main)
