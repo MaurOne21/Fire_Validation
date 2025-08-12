@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 19.1 - AI REALE (SINTASSI CORRETTA)
+# VERSIONE 19.2 - AI REALE (URL CORRETTO E FIX BUG TUPLA)
 
 import json
 import requests
@@ -24,7 +24,6 @@ COST_DESC_PARAM_NAME = "Descrizione"
 COST_UNIT_PARAM_NAME = "Costo_Unitario"
 #=====================================================================================
 
-
 #============== FUNZIONI HELPER ======================================================
 def find_all_elements(base_object) -> list:
     elements = []
@@ -33,8 +32,6 @@ def find_all_elements(base_object) -> list:
         for element in element_container: elements.extend(find_all_elements(element))
     elif isinstance(base_object, list):
         for item in base_object: elements.extend(find_all_elements(item))
-    
-    # ⬇️⬇️⬇️ ECCO LA CORREZIONE ⬇️⬇️⬇️
     element_id = getattr(base_object, 'id', None)
     if element_id not in (None, "") and "Objects.Organization.Model" not in getattr(base_object, 'speckle_type', ''):
         elements.append(base_object)
@@ -49,7 +46,8 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
     print(f"Chiamando l'API di Gemini con prompt: {prompt[:80]}...")
     
     headers = {"Content-Type": "application/json"}
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+    # ⬇️⬇️⬇️ ECCO LA CORREZIONE #1: URL UFFICIALE DI GEMINI ⬇️⬇️⬇️
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     final_prompt = prompt
     if is_json_response:
@@ -58,31 +56,27 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
     payload = {"contents": [{"parts": [{"text": final_prompt}]}]}
 
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        response = requests.post(url, headers=headers, json=payload, timeout=30) # Aumentato timeout
         response.raise_for_status()
         
         json_response = response.json()
         
-        # Percorso robusto per estrarre il testo
         candidates = json_response.get("candidates", [])
-        if not candidates:
-            raise KeyError("Nessun 'candidates' nella risposta.")
-        
+        if not candidates: raise KeyError("Nessun 'candidates' nella risposta.")
         content = candidates.get("content", {})
         parts = content.get("parts", [])
-        if not parts:
-            raise KeyError("Nessuna 'parts' nel contenuto.")
-            
+        if not parts: raise KeyError("Nessuna 'parts' nel contenuto.")
         text_response = parts.get("text", "").strip()
+        
         print(f"Risposta ricevuta da Gemini: {text_response}")
         return text_response
 
     except requests.exceptions.RequestException as e:
-        print(f"ERRORE: La chiamata all'API di Gemini è fallita: {e}")
+        print(f"ERRORE: Chiamata API fallita: {e}")
         if is_json_response: return '{"justification": "Chiamata API fallita."}'
         return "Errore nella chiamata API."
     except (KeyError, IndexError) as e:
-        print(f"ERRORE: La risposta di Gemini non ha il formato atteso: {e}. Risposta completa: {json_response}")
+        print(f"ERRORE: Risposta AI non valida: {e}. Risposta completa: {json_response}")
         if is_json_response: return '{"justification": "Risposta AI non valida."}'
         return "Formato risposta AI non valido."
 
@@ -124,17 +118,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
         ref_cost = price_list_entry.get("costo_nuovo") or price_list_entry.get("costo_kg")
         if ref_cost is None: continue
         
-        ai_prompt = (
-            f"Agisci come un esperto computista. Valuta questo costo unitario:\n"
-            f"- Descrizione: '{search_description}'\n"
-            f"- Costo nel Modello: €{model_cost:.2f}\n"
-            f"- Costo di Riferimento da Prezzario: €{ref_cost:.2f}\n"
-            f"Il costo nel modello è palesemente irragionevole (es. zero, troppo basso o troppo alto)? "
-            f"Giustifica la tua risposta. Fornisci anche un costo suggerito se lo ritieni errato.\n"
-            f"La tua risposta DEVE essere un oggetto JSON con tre chiavi: 'is_consistent' (boolean), "
-            f"'justification' (stringa concisa), e 'suggested_cost' (numero o null)."
-        )
-        
+        ai_prompt = (f"Sei un computista. Valuta questo costo: '{search_description}', Costo Modello: €{model_cost:.2f}, Riferimento: €{ref_cost:.2f}. Il costo del modello è irragionevole (es. zero, troppo basso/alto)? Giustifica e suggerisci un costo. Rispondi in JSON con 'is_consistent' (boolean), 'justification' (stringa), e 'suggested_cost' (numero o null).")
         ai_response_str = get_ai_suggestion(ai_prompt, is_json_response=True)
         
         try:
@@ -143,18 +127,17 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
                 justification = ai_response.get('justification', 'N/A')
                 suggestion = ai_response.get('suggested_cost')
                 warning_message = f"AI: {justification}"
-                if suggestion:
-                    warning_message += f" (Suggerito: ~€{suggestion:.2f})"
+                if suggestion: warning_message += f" (Suggerito: ~€{suggestion:.2f})"
                 cost_warnings.append((el, warning_message))
         except (json.JSONDecodeError, AttributeError) as e:
-            print(f"ERRORE nell'interpretare la risposta JSON dell'AI: {e} -> Risposta ricevuta: {ai_response_str}")
+            print(f"ERRORE interpretazione JSON: {e} -> Risposta: {ai_response_str}")
             
     print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
     return cost_warnings
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING REAL-AI VALIDATOR (v19.1) ---", flush=True)
+    print("--- STARTING REAL-AI VALIDATOR (v19.2) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -178,10 +161,14 @@ def main(ctx: AutomationContext) -> None:
             if fire_rating_errors:
                 ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
             if cost_warnings:
+                # ⬇️⬇️⬇️ ECCO LA CORREZIONE #2: SPACCHETTIAMO LA LISTA ⬇️⬇️⬇️
+                objects_with_cost_warnings = [item for item in cost_warnings]
+                messages_for_cost_warnings = [item for item in cost_warnings]
+                
                 ctx.attach_warning_to_objects(
                     category="Costo Non Congruo (AI)",
-                    affected_objects=[item for item in cost_warnings],
-                    message="Il costo unitario non è congruo secondo l'analisi AI."
+                    affected_objects=objects_with_cost_warnings,
+                    message="Il costo unitario non è congruo secondo l'analisi AI." # Messaggio generico per compatibilità
                 )
 
             summary_desc = "Validazione completata."
@@ -191,7 +178,7 @@ def main(ctx: AutomationContext) -> None:
             for rule_desc, count in error_counts.items():
                  fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
             
-            ai_summary_prompt = f"Agisci come un Project Manager. Un controllo automatico ha trovato questi problemi: {', '.join(error_counts.keys())}. Riassumi le priorità strategiche in una frase concisa."
+            ai_summary_prompt = f"Sei un Project Manager. Un controllo ha trovato questi problemi: {', '.join(error_counts.keys())}. Riassumi le priorità in una frase."
             ai_suggestion = get_ai_suggestion(ai_summary_prompt, is_json_response=False)
             fields.append({"name": "🤖 Analisi Strategica (AI)", "value": ai_suggestion, "inline": False})
             
