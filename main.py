@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 26.1 - INTELLIGENZA 4D + AI REALE
+# VERSIONE 26.2 - COMPLETO E CORRETTO
 
 import json
 import requests
@@ -10,20 +10,20 @@ from collections import defaultdict
 from speckle_automate import AutomationContext, execute_automate_function
 
 #============== CONFIGURAZIONE GLOBALE ==============================
-# ⬇️⬇️⬇️ RIPRISTINATA LA CHIAVE API REALE ⬇️⬇️⬇️
 GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
 WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
 
 GRUPPO_TESTO = "Testo"
 GRUPPO_DATI_IDENTITA = "Dati identità"
 FIRE_TARGET_CATEGORIES = ["Muri", "Pavimenti", "Telai Strutturali", "Pilastri", "Walls", "Floors", "Structural Framing", "Structural Columns"]
-# ... (altre configurazioni)
-WBS_TASK_PARAM = "WBS_Task" # Il nostro nuovo parametro per il 4D
+FIRE_RATING_PARAM = "Fire_Rating"
+COST_DESC_PARAM_NAME = "Descrizione"
+COST_UNIT_PARAM_NAME = "Costo_Unitario"
+WBS_TASK_PARAM = "WBS_Task"
 #=====================================================================================
 
-# (Le funzioni helper e le vecchie regole rimangono identiche)
+#============== FUNZIONI HELPER ======================================================
 def find_all_elements(base_object) -> list:
-    # ...
     elements = []
     element_container = getattr(base_object, '@elements', None) or getattr(base_object, 'elements', None)
     if element_container and isinstance(element_container, list):
@@ -42,7 +42,6 @@ def get_instance_parameter_value(element, group_name: str, param_name: str):
     try: return element.properties['Parameters']['Instance Parameters'][group_name][param_name]['value']
     except (AttributeError, KeyError, TypeError): return None
 
-# ⬇️⬇️⬇️ RIPRISTINATA LA FUNZIONE AI REALE E RESILIENTE ⬇️⬇️⬇️
 def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
     if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
         if is_json_response: return '{"is_consistent": false, "justification": "AI non configurata."}'
@@ -56,7 +55,7 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            time.sleep(1.1) # Pausa per evitare rate limiting
+            time.sleep(1.1)
             response = requests.post(url, headers=headers, json=payload, timeout=40)
             response.raise_for_status()
             json_response = response.json()
@@ -65,19 +64,18 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
             return text_response
         except requests.exceptions.RequestException as e:
             if e.response and e.response.status_code == 429:
-                print(f"Rate limit superato. Attendo 5 secondi (tentativo {attempt + 1}/{max_retries})")
+                print(f"Rate limit superato. Attendo 5s (tentativo {attempt + 1}/{max_retries})")
                 time.sleep(5)
                 continue
             else:
-                print(f"ERRORE di rete nella chiamata API: {e}")
+                print(f"ERRORE di rete API: {e}")
                 break
         except Exception as e:
-            print(f"ERRORE nell'interpretazione della risposta AI: {e}")
+            print(f"ERRORE interpretazione AI: {e}")
             break
     
-    if is_json_response: return '{"is_consistent": true, "justification": "Errore API dopo vari tentativi."}'
-    return "Errore API dopo vari tentativi."
-
+    if is_json_response: return '{"is_consistent": true, "justification": "Errore API."}'
+    return "Errore API."
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
     if not WEBHOOK_URL or "INCOLLA_QUI" in WEBHOOK_URL: return
@@ -85,16 +83,62 @@ def send_webhook_notification(title: str, description: str, color: int, fields: 
     try: requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
     except Exception as e: print(f"Errore invio notifica: {e}")
 
-# (Le funzioni delle regole esistenti e la nuova 4D rimangono identiche)
-# ...
+#============== FUNZIONI DELLE REGOLE ================================================
+def run_fire_rating_check(all_elements: list) -> list:
+    print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
+    errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_TARGET_CATEGORIES) and not get_instance_parameter_value(el, GRUPPO_TESTO, FIRE_RATING_PARAM)]
+    print(f"Rule #1 Finished. {len(errors)} errors found.", flush=True)
+    return errors
+
+def run_ai_cost_check(elements: list, price_list: list) -> list:
+    print("--- RUNNING RULE #5: AI COST CHECK (REAL AI) ---", flush=True)
+    cost_warnings = []
+    price_dict = {item['descrizione']: item for item in price_list}
+    for el in elements:
+        try:
+            item_description = get_type_parameter_value(el, GRUPPO_DATI_IDENTITA, COST_DESC_PARAM_NAME)
+            model_cost_raw = get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME)
+            model_cost = float(model_cost_raw)
+            if not item_description or not price_dict.get(item_description): continue
+        except (AttributeError, KeyError, TypeError, ValueError): continue
+        
+        ref_cost = price_dict[item_description].get("costo_nuovo") or price_dict[item_description].get("costo_kg")
+        if ref_cost is None: continue
+        
+        ai_prompt = (f"Sei un computista. Valuta: '{item_description}', Costo Modello: €{model_cost:.2f}, Riferimento: €{ref_cost:.2f}. Il costo è irragionevole? Giustifica e suggerisci un costo. Rispondi in JSON con 'is_consistent' (boolean), 'justification' (stringa), e 'suggested_cost' (numero o null).")
+        ai_response_str = get_ai_suggestion(ai_prompt, is_json_response=True)
+        try:
+            ai_response = json.loads(ai_response_str)
+            if not ai_response.get("is_consistent"):
+                warning_message = f"AI: {ai_response.get('justification')}"
+                cost_warnings.append((el, warning_message))
+        except (json.JSONDecodeError, AttributeError): continue
+    print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
+    return cost_warnings
+
+def run_4d_validation_check(elements: list, schedule: dict) -> list:
+    print("--- RUNNING RULE 4D-01: SEQUENCING VALIDATION ---", flush=True)
+    if not schedule or "tasks" not in schedule: return []
+    errors = []
+    tasks_by_name = {task['nome_attivita']: task for task in schedule["tasks"]}
+    for el in elements:
+        wbs_task = get_instance_parameter_value(el, GRUPPO_DATI_IDENTITA, WBS_TASK_PARAM)
+        if not wbs_task: continue
+        task_details = tasks_by_name.get(wbs_task)
+        if not task_details: continue
+        element_level = getattr(el, 'level', {}).get('name', 'N/D')
+        expected_level = task_details.get('livello_atteso', 'N/D')
+        if expected_level != 'N/D' and element_level != 'N/D' and expected_level not in element_level:
+            message = f"Incoerenza 4D: Elemento su livello '{element_level}' assegnato alla task '{wbs_task}' (prevista per '{expected_level}')."
+            errors.append((el, message))
+    print(f"Rule 4D-01 Finished. {len(errors)} errors found.", flush=True)
+    return errors
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING 4D + REAL AI VALIDATOR (v26.1) ---", flush=True)
+    print("--- STARTING 4D + REAL AI VALIDATOR (v26.2) ---", flush=True)
     try:
-        # Carichiamo sia il prezzario che il cronoprogramma
-        price_list = []
-        schedule = {}
+        price_list, schedule = [], {}
         try:
             with open(os.path.join(os.path.dirname(__file__), 'prezzario.json'), 'r', encoding='utf-8') as f:
                 price_list = json.load(f)
@@ -128,10 +172,7 @@ def main(ctx: AutomationContext) -> None:
                 messages_for_4d_errors = [item for item in sequencing_errors]
                 ctx.attach_warning_to_objects(category="Incoerenza 4D", affected_objects=objects_with_4d_errors, message=messages_for_4d_errors)
 
-            summary_desc = "Report di Validazione Automatica"
-            fields, error_counts = [], {}
-            error_summary_for_ai = []
-            
+            summary_desc, fields, error_counts, error_summary_for_ai = "Report di Validazione Automatica", [], {}, []
             if fire_rating_errors: error_counts["Dato Antincendio Mancante"] = len(fire_rating_errors)
             if cost_warnings: error_counts["Costo Non Congruo (AI)"] = len(cost_warnings)
             if sequencing_errors: error_counts["Incoerenza 4D"] = len(sequencing_errors)
@@ -140,11 +181,7 @@ def main(ctx: AutomationContext) -> None:
                  fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
                  error_summary_for_ai.append(f"- {count} errori di '{rule_desc}'")
             
-            ai_prompt = f"""
-            Agisci come un Project Manager BIM. Hai ricevuto questo report di validazione:
-            {os.linesep.join(error_summary_for_ai)}
-            Il tuo compito è scrivere un messaggio per il team su Discord. Deve essere breve, incisivo e assegnare due azioni concrete a persone fittizie (Paolo, Maria). Parla in italiano, non usare markdown.
-            """
+            ai_prompt = f"Agisci come un PM BIM. Hai ricevuto questo report: {os.linesep.join(error_summary_for_ai)}. Scrivi un messaggio per il team su Discord. Sii breve, incisivo e assegna due azioni a persone fittizie (Paolo, Maria). Parla in italiano, non usare markdown."
             ai_suggestion = get_ai_suggestion(ai_prompt, is_json_response=False)
             fields.append({"name": "🤖 Analisi Strategica del PM (AI)", "value": ai_suggestion, "inline": False})
             
