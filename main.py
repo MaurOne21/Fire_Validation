@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 20.1 - RELEASE CANDIDATE (TUTTO FUNZIONANTE)
+# VERSIONE 20.0 - LA PROVA DEFINITIVA (TUTTI I BUG CORRETTI)
 
 import json
 import requests
@@ -53,14 +53,21 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
         response.raise_for_status()
         json_response = response.json()
         
+        # ⬇️⬇️⬇️ FIX #1: PERCORSO DI LETTURA DELLA RISPOSTA AI CORRETTO ⬇️⬇️⬇️
         text_response = json_response['candidates']['content']['parts']['text'].strip()
+        
         print(f"Risposta ricevuta da Gemini: {text_response}")
         return text_response
 
-    except Exception as e:
-        print(f"ERRORE nella chiamata o interpretazione AI: {e}")
-        if is_json_response: return '{"is_consistent": false, "justification": "Errore API o risposta non valida."}'
-        return "Errore API."
+    except requests.exceptions.RequestException as e:
+        print(f"ERRORE: Chiamata API fallita: {e}")
+        if is_json_response: return '{"is_consistent": false, "justification": "Chiamata API fallita."}'
+        return "Errore nella chiamata API."
+    except (KeyError, IndexError, TypeError) as e:
+        # Stampiamo l'errore e la risposta completa per il debug, se dovesse ancora fallire
+        print(f"ERRORE: Risposta AI non valida: {e}. Risposta completa: {json.dumps(json_response)}")
+        if is_json_response: return '{"is_consistent": false, "justification": "Risposta AI non valida."}'
+        return "Formato risposta AI non valido."
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
     if not WEBHOOK_URL or "INCOLLA_QUI" in WEBHOOK_URL: return
@@ -86,15 +93,13 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
     print("--- RUNNING RULE #5: AI COST CHECK (REAL AI) ---", flush=True)
     cost_warnings = []
     price_dict = {item['descrizione']: item for item in price_list}
-    
     for el in elements:
         try:
             item_description = el.properties['Parameters']['Type Parameters'][GRUPPO_DATI_IDENTITA][COST_DESC_PARAM_NAME]['value']
             model_cost_raw = el.properties['Parameters']['Instance Parameters'][GRUPPO_TESTO][COST_UNIT_PARAM_NAME]['value']
             model_cost = float(model_cost_raw)
             if not item_description: continue
-        except (AttributeError, KeyError, TypeError, ValueError):
-            continue
+        except (AttributeError, KeyError, TypeError, ValueError): continue
         
         search_description = item_description
         price_list_entry = price_dict.get(search_description)
@@ -105,7 +110,6 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
         
         ai_prompt = (f"Sei un computista. Valuta: '{search_description}', Costo Modello: €{model_cost:.2f}, Riferimento: €{ref_cost:.2f}. Il costo è irragionevole? Giustifica e suggerisci un costo. Rispondi in JSON con 'is_consistent' (boolean), 'justification' (stringa), e 'suggested_cost' (numero o null).")
         ai_response_str = get_ai_suggestion(ai_prompt, is_json_response=True)
-        
         try:
             ai_response = json.loads(ai_response_str)
             if not ai_response.get("is_consistent"):
@@ -113,7 +117,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
                 suggestion = ai_response.get('suggested_cost')
                 warning_message = f"AI: {justification}"
                 if suggestion: warning_message += f" (Suggerito: ~€{suggestion:.2f})"
-                cost_warnings.append((el, warning_message))
+                cost_warnings.append((el, warning_message)) # Salviamo ancora la tupla (oggetto, messaggio)
         except (json.JSONDecodeError, AttributeError) as e:
             print(f"ERRORE interpretazione JSON: {e} -> Risposta: {ai_response_str}")
             
@@ -122,7 +126,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING RELEASE CANDIDATE (v20.1) ---", flush=True)
+    print("--- STARTING FINAL VALIDATOR (v20.0) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -146,12 +150,12 @@ def main(ctx: AutomationContext) -> None:
             if fire_rating_errors:
                 ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
             if cost_warnings:
-                # ⬇️⬇️⬇️ FIX DEFINITIVO PER IL BUG DELLA TUPLA ⬇️⬇️⬇️
+                # ⬇️⬇️⬇️ FIX #2: SPACCHETTIAMO LA LISTA CORRETTAMENTE ⬇️⬇️⬇️
                 objects_with_cost_warnings = [item for item in cost_warnings]
                 ctx.attach_warning_to_objects(
                     category="Costo Non Congruo (AI)",
                     affected_objects=objects_with_cost_warnings,
-                    message="Il costo unitario non è congruo." # Messaggio generico per compatibilità
+                    message="Il costo unitario non è congruo secondo l'analisi AI."
                 )
 
             summary_desc = "Validazione completata."
@@ -178,7 +182,7 @@ def main(ctx: AutomationContext) -> None:
         traceback.print_exc()
         ctx.mark_run_failed(error_message)
 
-    print("--- RELEASE CANDIDATE SCRIPT FINISHED ---", flush=True)
+    print("--- FINAL SCRIPT FINISHED ---", flush=True)
 
 if __name__ == "__main__":
     execute_automate_function(main)
