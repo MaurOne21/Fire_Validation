@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 22.1 - LA CORREZIONE FINALE, DAVVERO.
+# VERSIONE 22.2 - LA VERSIONE FINALE E FUNZIONANTE
 
 import json
 import requests
@@ -10,6 +10,7 @@ from speckle_automate import AutomationContext, execute_automate_function
 #============== CONFIGURAZIONE GLOBALE ==============================
 GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
 WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
+
 GRUPPO_TESTO = "Testo"
 GRUPPO_DATI_IDENTITA = "Dati identità"
 FIRE_TARGET_CATEGORIES = ["Muri", "Pavimenti", "Telai Strutturali", "Pilastri", "Walls", "Floors", "Structural Framing", "Structural Columns"]
@@ -52,16 +53,20 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
         response.raise_for_status()
         json_response = response.json()
         
-        # ⬇️⬇️⬇️ FIX #1: PERCORSO DI LETTURA BASATO SUL LOG DI DIAGNOSI ⬇️⬇️⬇️
+        # ⬇️⬇️⬇️ FIX #1: PERCORSO DI LETTURA DELLA RISPOSTA AI, QUELLO GIUSTO. ⬇️⬇️⬇️
         text_response = json_response['candidates']['content']['parts']['text'].strip()
         
         print(f"Risposta ricevuta da Gemini: {text_response}")
         return text_response
 
-    except Exception as e:
-        print(f"ERRORE nella chiamata o interpretazione AI: {e}")
-        if is_json_response: return '{"is_consistent": false, "justification": "Errore API o risposta non valida."}'
-        return "Errore API."
+    except requests.exceptions.RequestException as e:
+        print(f"ERRORE: Chiamata API fallita: {e}")
+        if is_json_response: return '{"is_consistent": false, "justification": "Chiamata API fallita."}'
+        return "Errore nella chiamata API."
+    except (KeyError, IndexError, TypeError) as e:
+        print(f"ERRORE: Risposta AI non valida: {e}. Risposta completa: {json.dumps(json_response)}")
+        if is_json_response: return '{"is_consistent": false, "justification": "Risposta AI non valida."}'
+        return "Formato risposta AI non valido."
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
     if not WEBHOOK_URL or "INCOLLA_QUI" in WEBHOOK_URL: return
@@ -78,7 +83,8 @@ def run_fire_rating_check(all_elements: list) -> list:
             try:
                 value = el.properties['Parameters']['Instance Parameters'][GRUPPO_TESTO][FIRE_RATING_PARAM]['value']
                 if not value: errors.append(el)
-            except (AttributeError, KeyError, TypeError): errors.append(el)
+            except (AttributeError, KeyError, TypeError):
+                errors.append(el)
     print(f"Rule #1 Finished. {len(errors)} errors found.", flush=True)
     return errors
 
@@ -119,7 +125,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING FINAL VALIDATOR (v22.1) ---", flush=True)
+    print("--- STARTING FINAL VALIDATOR (v22.2) ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
