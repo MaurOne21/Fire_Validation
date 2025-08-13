@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 26.3 - STABILE, INTELLIGENTE E CORRETTO
+# VERSIONE 26.4 - DIAGNOSI AVANZATA
 
 import json
 import requests
@@ -53,7 +53,6 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            # ⬇️⬇️⬇️ FIX #1: Aumentata la pausa per essere più "gentili" ⬇️⬇️⬇️
             time.sleep(2) 
             response = requests.post(url, headers=headers, json=payload, timeout=40)
             response.raise_for_status()
@@ -77,7 +76,7 @@ def send_webhook_notification(title: str, description: str, color: int, fields: 
     try: requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
     except Exception as e: print(f"Errore invio notifica: {e}")
 
-#============== FUNZIONI DELLE REGOLE ================================================
+#============== FUNZIONI DELLE REGOLE (CON LOGGING DEGLI ERRORI) =================
 def run_fire_rating_check(all_elements: list) -> list:
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
     errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_TARGET_CATEGORIES) and not get_instance_parameter_value(el, GRUPPO_TESTO, FIRE_RATING_PARAM)]
@@ -85,56 +84,82 @@ def run_fire_rating_check(all_elements: list) -> list:
     return errors
 
 def run_ai_cost_check(elements: list, price_list: list) -> list:
-    print("--- RUNNING RULE #5: AI COST CHECK (REAL AI) ---", flush=True)
+    print("--- RUNNING RULE #5: AI COST CHECK (DIAGNOSTIC) ---", flush=True)
     cost_warnings, price_dict = [], {item['descrizione']: item for item in price_list}
     for el in elements:
         try:
             item_description = get_type_parameter_value(el, GRUPPO_DATI_IDENTITA, COST_DESC_PARAM_NAME)
             model_cost_raw = get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME)
+            if item_description is None and model_cost_raw is None: continue # Ignora elementi non pertinenti
+            
+            # Se siamo qui, l'elemento è rilevante per il debug
+            print(f"[DIAGNOSI COSTO] Elem ID {el.id}: Desc='{item_description}', Costo='{model_cost_raw}'")
+
             model_cost = float(model_cost_raw)
-            if not item_description or not price_dict.get(item_description): continue
-        except (AttributeError, KeyError, TypeError, ValueError): continue
-        ref_cost = price_dict[item_description].get("costo_nuovo") or price_dict[item_description].get("costo_kg")
-        if ref_cost is None: continue
-        ai_prompt = (f"Sei un computista. Valuta: '{item_description}', Costo Modello: €{model_cost:.2f}, Riferimento: €{ref_cost:.2f}. Il costo è irragionevole? Giustifica e suggerisci un costo. Rispondi in JSON con 'is_consistent' (boolean), 'justification' (stringa), e 'suggested_cost' (numero o null).")
-        ai_response_str = get_ai_suggestion(ai_prompt, is_json_response=True)
-        try:
+            if not item_description:
+                print(f"  -> SCARTATO: 'Descrizione' mancante.")
+                continue
+            if price_dict.get(item_description) is None:
+                print(f"  -> SCARTATO: Descrizione '{item_description}' non nel prezzario.")
+                continue
+            
+            # (Logica AI)
+            ref_cost = price_dict[item_description].get("costo_nuovo") or price_dict[item_description].get("costo_kg")
+            if ref_cost is None: continue
+            ai_prompt = (f"Valuta: '{item_description}', Costo Modello: €{model_cost:.2f}, Riferimento: €{ref_cost:.2f}.")
+            ai_response_str = get_ai_suggestion(ai_prompt, is_json_response=True)
             ai_response = json.loads(ai_response_str)
             if not ai_response.get("is_consistent"):
                 warning_message = f"AI: {ai_response.get('justification')}"
                 cost_warnings.append((el, warning_message))
-        except (json.JSONDecodeError, AttributeError): continue
+
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            print(f"[DIAGNOSI COSTO] ERRORE CRITICO nell'elemento {el.id}: {e}")
+            continue
+        
     print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
     return cost_warnings
 
 def run_4d_validation_check(elements: list, schedule: dict) -> list:
-    print("--- RUNNING RULE 4D-01: SEQUENCING VALIDATION ---", flush=True)
+    print("--- RUNNING RULE 4D-01: SEQUENCING VALIDATION (DIAGNOSTIC) ---", flush=True)
     if not schedule or "tasks" not in schedule: return []
     errors = []
     tasks_by_name = {task['nome_attivita']: task for task in schedule["tasks"]}
     for el in elements:
-        wbs_task = get_instance_parameter_value(el, GRUPPO_DATI_IDENTITA, WBS_TASK_PARAM)
-        if not wbs_task: continue
-        task_details = tasks_by_name.get(wbs_task)
-        if not task_details: continue
-        
-        # ⬇️⬇️⬇️ FIX #2: Lettura robusta del livello ⬇️⬇️⬇️
-        level_obj = getattr(el, 'level', 'N/D')
-        element_level = getattr(level_obj, 'name', str(level_obj))
+        try:
+            wbs_task = get_instance_parameter_value(el, GRUPPO_DATI_IDENTITA, WBS_TASK_PARAM)
+            if not wbs_task: continue
+            
+            task_details = tasks_by_name.get(wbs_task)
+            if not task_details: continue
+            
+            level_obj = getattr(el, 'level', 'N/D')
+            element_level = getattr(level_obj, 'name', str(level_obj))
+            expected_level = task_details.get('livello_atteso', 'N/D')
 
-        expected_level = task_details.get('livello_atteso', 'N/D')
-        if expected_level != 'N/D' and element_level != 'N/D' and expected_level not in element_level:
-            message = f"Incoerenza 4D: Elemento su livello '{element_level}' assegnato alla task '{wbs_task}' (prevista per '{expected_level}')."
-            errors.append((el, message))
+            if expected_level != 'N/D' and element_level != 'N/D' and expected_level not in element_level:
+                message = f"Incoerenza 4D: Elem su livello '{element_level}' assegnato a task '{wbs_task}' (prevista per '{expected_level}')."
+                errors.append((el, message))
+        except Exception as e:
+            print(f"[DIAGNOSI 4D] ERRORE CRITICO nell'elemento {el.id}: {e}")
+            continue
     print(f"Rule 4D-01 Finished. {len(errors)} errors found.", flush=True)
     return errors
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING 4D + REAL AI VALIDATOR (v26.3) ---", flush=True)
+    print("--- STARTING 4D + REAL AI VALIDATOR (v26.4 DIAGNOSTIC) ---", flush=True)
     try:
         price_list, schedule = [], {}
-        # ... (caricamento file identico)
+        try:
+            with open(os.path.join(os.path.dirname(__file__), 'prezzario.json'), 'r', encoding='utf-8') as f:
+                price_list = json.load(f)
+        except Exception: print("ATTENZIONE: prezzario.json non trovato.")
+        try:
+            with open(os.path.join(os.path.dirname(__file__), 'schedule.json'), 'r', encoding='utf-8') as f:
+                schedule = json.load(f)
+        except Exception: print("ATTENZIONE: schedule.json non trovato.")
+
         all_elements = find_all_elements(ctx.receive_version())
         if not all_elements:
             ctx.mark_run_success("Nessun elemento.")
@@ -156,10 +181,23 @@ def main(ctx: AutomationContext) -> None:
                 ctx.attach_warning_to_objects(category="Costo Non Congruo (AI)", affected_objects=objects_with_cost_warnings, message="Il costo unitario non è congruo.")
             if sequencing_errors:
                 objects_with_4d_errors = [item for item in sequencing_errors]
-                messages_for_4d_errors = [item for item in sequencing_errors]
-                ctx.attach_warning_to_objects(category="Incoerenza 4D", affected_objects=objects_with_4d_errors, message=messages_for_4d_errors)
+                ctx.attach_warning_to_objects(category="Incoerenza 4D", affected_objects=objects_with_4d_errors, message="Errore di sequenza temporale.")
 
-            # ... (logica notifica identica)
+            summary_desc, fields, error_counts, error_summary_for_ai = "Report di Validazione Automatica", [], {}, []
+            if fire_rating_errors: error_counts["Dato Antincendio Mancante"] = len(fire_rating_errors)
+            if cost_warnings: error_counts["Costo Non Congruo (AI)"] = len(cost_warnings)
+            if sequencing_errors: error_counts["Incoerenza 4D"] = len(sequencing_errors)
+            
+            for rule_desc, count in error_counts.items():
+                 fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
+                 error_summary_for_ai.append(f"- {count} errori di '{rule_desc}'")
+            
+            ai_prompt = f"Agisci come un PM BIM. Hai ricevuto questo report: {os.linesep.join(error_summary_for_ai)}. Scrivi un messaggio per il team su Discord. Sii breve, incisivo e assegna due azioni a persone fittizie (Paolo, Maria). Parla in italiano, non usare markdown."
+            ai_suggestion = get_ai_suggestion(ai_prompt, is_json_response=False)
+            fields.append({"name": "🤖 Analisi Strategica del PM (AI)", "value": ai_suggestion, "inline": False})
+            
+            send_webhook_notification(f"🚨 {total_issues} Problemi Rilevati", summary_desc, 15158332, fields)
+            ctx.mark_run_failed(f"Validazione fallita con {total_issues} problemi.")
         else:
             success_message = "✅ Validazione completata. Nessun problema rilevato."
             send_webhook_notification("✅ Validazione Passata", success_message, 3066993, [])
