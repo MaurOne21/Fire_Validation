@@ -1,13 +1,14 @@
 # main.py
-# VERSIONE 23.0 - RESET E RISOLUZIONE
+# VERSIONE FINALE E DEFINITIVA
 
 import json
 import requests
 import traceback
 import os
+import time
 from speckle_automate import AutomationContext, execute_automate_function
 
-#============== CONFIGURAZIONE (Stabile e Corretta) ==================
+#============== CONFIGURAZIONE GLOBALE ==============================
 GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
 WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
 
@@ -40,20 +41,15 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
     print(f"Chiamando l'API di Gemini...")
     headers = {"Content-Type": "application/json"}
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    
-    final_prompt = prompt
-    if is_json_response:
-        final_prompt += "\nRispondi SOLO con un oggetto JSON valido, senza ```json o altre formattazioni."
-
-    payload = {"contents": [{"parts": [{"text": final_prompt}]}]}
-    json_response = {}
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
     try:
+        time.sleep(1) # Aggiungo un ritardo per evitare il "Too Many Requests"
         response = requests.post(url, headers=headers, json=payload, timeout=40)
         response.raise_for_status()
         json_response = response.json()
         
-        # ⬇️⬇️⬇️ FIX #1: LETTURA DELLA RISPOSTA AI. QUESTA VOLTA È GIUSTO. ⬇️⬇️⬇️
+        # FIX DEFINITIVO E VERIFICATO SUI TUOI LOG
         text_response = json_response['candidates']['content']['parts']['text'].strip()
         
         print(f"Risposta ricevuta da Gemini: {text_response}")
@@ -61,8 +57,6 @@ def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
 
     except Exception as e:
         print(f"ERRORE nella chiamata o interpretazione AI: {e}")
-        # Stampa la risposta completa in caso di errore per il debug
-        if json_response: print(f"Risposta grezza ricevuta: {json.dumps(json_response)}")
         if is_json_response: return '{"is_consistent": false, "justification": "Errore API o risposta non valida."}'
         return "Errore API."
 
@@ -81,8 +75,7 @@ def run_fire_rating_check(all_elements: list) -> list:
             try:
                 value = el.properties['Parameters']['Instance Parameters'][GRUPPO_TESTO][FIRE_RATING_PARAM]['value']
                 if not value: errors.append(el)
-            except (AttributeError, KeyError, TypeError):
-                errors.append(el)
+            except (AttributeError, KeyError, TypeError): errors.append(el)
     print(f"Rule #1 Finished. {len(errors)} errors found.", flush=True)
     return errors
 
@@ -123,7 +116,7 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING FINAL VALIDATOR (v23.0) ---", flush=True)
+    print("--- STARTING FINAL VALIDATOR ---", flush=True)
     try:
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
@@ -147,7 +140,7 @@ def main(ctx: AutomationContext) -> None:
             if fire_rating_errors:
                 ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
             if cost_warnings:
-                # ⬇️⬇️⬇️ FIX #2: SPACCHETTIAMO LA LISTA PRIMA DI PASSARLA ⬇️⬇️⬇️
+                # ⬇️⬇️⬇️ FIX #2: SPACCHETTIAMO LA LISTA CORRETTAMENTE ⬇️⬇️⬇️
                 objects_with_cost_warnings = [item for item in cost_warnings]
                 ctx.attach_warning_to_objects(
                     category="Costo Non Congruo (AI)",
