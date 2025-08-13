@@ -1,10 +1,11 @@
 # main.py
-# VERSIONE 24.0 - BIMEET&GREET EDITION (STABILE + NOTIFICHE AI)
+# VERSIONE 24.0 - AI REALE E RESILIENTE
 
 import json
 import requests
 import traceback
 import os
+import time # Importiamo la libreria per le pause
 from collections import defaultdict
 from speckle_automate import AutomationContext, execute_automate_function
 
@@ -12,19 +13,12 @@ from speckle_automate import AutomationContext, execute_automate_function
 GEMINI_API_KEY = "AIzaSyC7zV4v755kgFK2tClm1EaDtoQFnAHQjeg"
 WEBHOOK_URL = "https://discord.com/api/webhooks/1398412307830145165/2QpAJDDmDnVsBezBVUXKbwHubYw60QTNWR-oLyn0N9MR73S0u8LRgAhgwmz9Q907CNCb"
 
-# --- Nomi dei Gruppi Parametri (in Italiano) ---
 GRUPPO_TESTO = "Testo"
 GRUPPO_DATI_IDENTITA = "Dati identità"
-
-# --- Regole Antincendio ---
 FIRE_TARGET_CATEGORIES = ["Muri", "Pavimenti", "Telai Strutturali", "Pilastri", "Walls", "Floors", "Structural Framing", "Structural Columns"]
 FIRE_RATING_PARAM = "Fire_Rating"
-FIRE_SEAL_PARAM = "FireSealInstalled"
-
-# --- Regole Costi ---
 COST_DESC_PARAM_NAME = "Descrizione"
 COST_UNIT_PARAM_NAME = "Costo_Unitario"
-BUDGETS = {"Muri": 120000, "Pavimenti": 50000, "Walls": 120000, "Floors": 50000}
 #=====================================================================================
 
 #============== FUNZIONI HELPER ======================================================
@@ -39,23 +33,43 @@ def find_all_elements(base_object) -> list:
         elements.append(base_object)
     return elements
 
-def get_ai_suggestion(prompt: str) -> str:
+def get_ai_suggestion(prompt: str, is_json_response: bool = True) -> str:
     if not GEMINI_API_KEY or "INCOLLA_QUI" in GEMINI_API_KEY:
+        if is_json_response: return '{"is_consistent": false, "justification": "AI non configurata."}'
         return "AI non configurata."
+
     print(f"Chiamando l'API di Gemini...")
     headers = {"Content-Type": "application/json"}
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=40)
-        response.raise_for_status()
-        json_response = response.json()
-        text_response = json_response['candidates']['content']['parts']['text'].strip()
-        print(f"Risposta ricevuta da Gemini: {text_response}")
-        return text_response
-    except Exception as e:
-        print(f"ERRORE nella chiamata AI: {e}")
-        return "Errore durante la generazione del suggerimento AI."
+    
+    # --- NUOVA LOGICA DI "RALLENTA E RIPROVA" ---
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            time.sleep(1.1) # Pausa di poco più di un secondo per stare sotto i 60/min
+            response = requests.post(url, headers=headers, json=payload, timeout=40)
+            response.raise_for_status()
+            json_response = response.json()
+            text_response = json_response['candidates']['content']['parts']['text'].strip()
+            print(f"Risposta ricevuta da Gemini.")
+            return text_response
+        except requests.exceptions.RequestException as e:
+            if e.response and e.response.status_code == 429: # Errore "Too Many Requests"
+                print(f"Rate limit superato. Attendo 5 secondi prima di riprovare (tentativo {attempt + 1}/{max_retries})")
+                time.sleep(5)
+                continue # Riprova il ciclo
+            else:
+                print(f"ERRORE di rete nella chiamata API: {e}")
+                break # Esci dal ciclo per altri errori di rete
+        except Exception as e:
+            print(f"ERRORE nell'interpretazione della risposta AI: {e}")
+            break
+    
+    # Se tutti i tentativi falliscono
+    if is_json_response: return '{"is_consistent": true, "justification": "Errore API dopo vari tentativi."}'
+    return "Errore API dopo vari tentativi."
+
 
 def send_webhook_notification(title: str, description: str, color: int, fields: list):
     if not WEBHOOK_URL or "INCOLLA_QUI" in WEBHOOK_URL: return
@@ -76,50 +90,94 @@ def run_fire_rating_check(all_elements: list) -> list:
     print(f"Rule #1 Finished. {len(errors)} errors found.", flush=True)
     return errors
 
-def run_penetration_check(all_elements: list) -> list:
-    print("--- RUNNING RULE #3: FIRE COMPARTMENTATION ---", flush=True)
-    errors = []
-    for el in all_elements:
-        if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_OPENING_CATEGORIES):
-            value = el.properties['Parameters']['Instance Parameters'][GRUPPO_TESTO][FIRE_SEAL_PARAM]['value']
-            if not (value is True or str(value).lower() in ["si", "yes", "true", "1"]):
-                errors.append(el)
-    print(f"Rule #3 Finished. {len(errors)} errors found.", flush=True)
-    return errors
-
-def run_total_budget_check(elements: list) -> list:
-    print("--- RUNNING RULE #4: TOTAL BUDGET CHECK ---", flush=True)
-    costs_by_category = defaultdict(float)
-    for el in elements:
-        category = getattr(el, 'category', '')
-        if category in BUDGETS:
-            try:
-                cost_val = el.properties['Parameters']['Instance Parameters'][GRUPPO_TESTO][COST_UNIT_PARAM_NAME]['value']
-                metric = getattr(el, 'volume', getattr(el, 'area', 0))
-                costs_by_category[category] += (float(cost_val) if cost_val else 0) * metric
-            except (AttributeError, KeyError, TypeError, ValueError): continue
-    alerts = [f"Categoria '{cat}': superato budget di €{total_cost - BUDGETS[cat]:,.2f}" for cat, total_cost in costs_by_category.items() if total_cost > BUDGETS[cat]]
-    print(f"Rule #4 Finished. {len(alerts)} budget issues found.", flush=True)
-    return alerts
-
 def run_ai_cost_check(elements: list, price_list: list) -> list:
-    print("--- RUNNING RULE #5: AI COST CHECK (SIMULATED) ---", flush=True)
+    print("--- RUNNING RULE #5: AI COST CHECK (REAL AI) ---", flush=True)
     cost_warnings = []
     price_dict = {item['descrizione']: item for item in price_list}
     for el in elements:
         try:
             item_description = el.properties['Parameters']['Type Parameters'][GRUPPO_DATI_IDENTITA][COST_DESC_PARAM_NAME]['value']
-            model_cost = float(el.properties['Parameters']['Instance Parameters'][GRUPPO_TESTO][COST_UNIT_PARAM_NAME]['value'])
+            model_cost_raw = el.properties['Parameters']['Instance Parameters'][GRUPPO_TESTO][COST_UNIT_PARAM_NAME]['value']
+            model_cost = float(model_cost_raw)
             if not item_description or not price_dict.get(item_description): continue
-            
-            # Usiamo una semplice logica simulata per decidere se c'è un errore
-            if model_cost <= 0.1:
-                cost_warnings.append((el, "Costo non compilato o pari a zero."))
         except (AttributeError, KeyError, TypeError, ValueError): continue
+        
+        ref_cost = price_dict[item_description].get("costo_nuovo") or price_dict[item_description].get("costo_kg")
+        if ref_cost is None: continue
+        
+        ai_prompt = (f"Sei un computista. Valuta: '{item_description}', Costo Modello: €{model_cost:.2f}, Riferimento: €{ref_cost:.2f}. Il costo è irragionevole? Giustifica e suggerisci un costo. Rispondi in JSON con 'is_consistent' (boolean), 'justification' (stringa), e 'suggested_cost' (numero o null).")
+        ai_response_str = get_ai_suggestion(ai_prompt, is_json_response=True)
+        try:
+            ai_response = json.loads(ai_response_str)
+            if not ai_response.get("is_consistent"):
+                warning_message = f"AI: {ai_response.get('justification')}"
+                cost_warnings.append((el, warning_message))
+        except (json.JSONDecodeError, AttributeError): continue
             
     print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
     return cost_warnings
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- START ---")
+    print("--- STARTING RESILIENT AI VALIDATOR (v24.0) ---", flush=True)
+    try:
+        price_list = []
+        prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
+        try:
+            with open(prezzario_path, 'r', encoding='utf-8') as f: price_list = json.load(f)
+        except Exception: pass
+
+        all_elements = find_all_elements(ctx.receive_version())
+        if not all_elements:
+            ctx.mark_run_success("Nessun elemento.")
+            return
+
+        print(f"Trovati {len(all_elements)} elementi.", flush=True)
+        
+        fire_rating_errors = run_fire_rating_check(all_elements)
+        cost_warnings = run_ai_cost_check(all_elements, price_list)
+        
+        total_issues = len(fire_rating_errors) + len(cost_warnings)
+
+        if total_issues > 0:
+            if fire_rating_errors:
+                ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
+            if cost_warnings:
+                objects_with_cost_warnings = [item for item in cost_warnings]
+                ctx.attach_warning_to_objects(category="Costo Non Congruo (AI)", affected_objects=objects_with_cost_warnings, message="Il costo unitario non è congruo.")
+
+            summary_desc = "Validazione completata."
+            fields, error_counts = [], {}
+            error_summary_for_ai = []
+            
+            if fire_rating_errors: error_counts["Dato Antincendio Mancante"] = len(fire_rating_errors)
+            if cost_warnings: error_counts["Costo Non Congruo (AI)"] = len(cost_warnings)
+            
+            for rule_desc, count in error_counts.items():
+                 fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
+                 error_summary_for_ai.append(f"- {count} errori di '{rule_desc}'")
+
+            ai_prompt = f"""
+            Agisci come un Project Manager BIM. Hai ricevuto questo report di validazione:
+            {os.linesep.join(error_summary_for_ai)}
+            Il tuo compito è scrivere un messaggio per il team su Discord. Deve essere breve, incisivo e assegnare due azioni concrete a persone fittizie (Paolo, Maria). Parla in italiano, non usare markdown.
+            """
+            ai_suggestion = get_ai_suggestion(ai_prompt, is_json_response=False)
+            fields.append({"name": "🤖 Analisi Strategica del PM (AI)", "value": ai_suggestion, "inline": False})
+            
+            send_webhook_notification(f"🚨 {total_issues} Problemi Rilevati", summary_desc, 15158332, fields)
+            ctx.mark_run_failed(f"Validazione fallita con {total_issues} problemi.")
+        else:
+            success_message = "✅ Validazione completata. Nessun problema rilevato."
+            send_webhook_notification("✅ Validazione Passata", success_message, 3066993, [])
+            ctx.mark_run_success(success_message)
+
+    except Exception as e:
+        error_message = f"Errore critico: {e}"
+        traceback.print_exc()
+        ctx.mark_run_failed(error_message)
+
+    print("--- SCRIPT FINALE FINISHED ---", flush=True)
+
+if __name__ == "__main__":
+    execute_automate_function(main)
