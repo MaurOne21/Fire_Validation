@@ -1,5 +1,5 @@
 # main.py
-# VERSIONE 25.1 - REPORTING HTML STABILE (NO PLOTLY)
+# VERSIONE 25.2 - INDENTAZIONE CORRETTA
 
 import json
 import requests
@@ -25,7 +25,7 @@ COST_UNIT_PARAM_NAME = "Costo_Unitario"
 BUDGETS = {"Muri": 120000, "Pavimenti": 50000, "Walls": 120000, "Floors": 50000}
 #=====================================================================================
 
-# (Funzioni helper e delle regole - nessuna modifica)
+#============== FUNZIONI HELPER ======================================================
 def find_all_elements(base_object) -> list:
     elements = []
     element_container = getattr(base_object, '@elements', None) or getattr(base_object, 'elements', None)
@@ -57,6 +57,7 @@ def send_webhook_notification(title: str, description: str, color: int, fields: 
     try: requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
     except Exception as e: print(f"Errore invio notifica: {e}")
 
+#============== FUNZIONI DELLE REGOLE ================================================
 def run_fire_rating_check(all_elements: list) -> list:
     print("--- RUNNING RULE #1: FIRE RATING CENSUS ---", flush=True)
     errors = [el for el in all_elements if any(target.lower() in getattr(el, 'category', '').lower() for target in FIRE_TARGET_CATEGORIES) and not get_instance_parameter_value(el, GRUPPO_TESTO, FIRE_RATING_PARAM)]
@@ -98,137 +99,100 @@ def run_ai_cost_check(elements: list, price_list: list) -> list:
             item_description = get_type_parameter_value(el, GRUPPO_DATI_IDENTITA, COST_DESC_PARAM_NAME)
             model_cost = float(get_instance_parameter_value(el, GRUPPO_TESTO, COST_UNIT_PARAM_NAME))
             if not item_description or not price_dict.get(item_description): continue
+
             if model_cost <= 0.1:
                 ai_response_str = get_ai_suggestion(f"Costo Modello: €{model_cost}")
                 ai_response = json.loads(ai_response_str)
                 warning_message = f"AI: {ai_response.get('justification')}"
                 cost_warnings.append((el, warning_message))
         except (AttributeError, KeyError, TypeError, ValueError): continue
+            
     print(f"Rule #5 Finished. {len(cost_warnings)} cost issues found.", flush=True)
     return cost_warnings
 
-#============== FUNZIONI DI REPORTING (STABILI) =================================
+#============== FUNZIONI DI REPORTING (VUOTE PER ORA) ============================
 def create_html_report(all_errors: list, ctx: AutomationContext) -> str:
-    if not all_errors:
-        return "<h1>✅ Nessun Errore Rilevato</h1>"
-
-    # Costruiamo il link di base al modello
-    base_link = f"{ctx.speckle_server_url}/projects/{ctx.project_id}/models/{ctx.model.id}@{ctx.version_id}"
-
-    # Stili CSS per un look professionale
-    styles = """
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        h1, h2 { color: #2E86C1; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #dddddd; text-align: left; padding: 8px; }
-        th { background-color: #f2f2f2; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
-        a { color: #3498DB; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-    </style>
-    """
-    
-    # Intestazione
-    header_html = f"<h1>Report di Validazione</h1><p><b>Commit:</b> {ctx.version_id}</p><p><b>Totale Problemi:</b> {len(all_errors)}</p>"
-
-    # Tabella degli errori
-    table_header = "<tr><th>Regola</th><th>Livello</th><th>Categoria</th><th>ID Elemento (Link)</th><th>Messaggio</th></tr>"
-    table_rows = ""
-    for e in all_errors:
-        object_link = f"<a href='{base_link}/objects/{e['element_id']}' target='_blank'>{e['element_id']}</a>"
-        table_rows += f"<tr><td>{e['rule_description']}</td><td>{e['error_level']}</td><td>{e['element_category']}</td><td>{object_link}</td><td>{e['message']}</td></tr>"
-    
-    table_html = f"<h2>Dettaglio Errori</h2><table>{table_header}{table_rows}</table>"
-
-    return f"<html><head><title>Speckle Validation Report</title>{styles}</head><body>{header_html}{table_html}</body></html>"
+    # Funzione vuota per ora
+    return "<html><body><h1>Report in costruzione</h1></body></html>"
 
 def create_csv_export(all_errors: list, ctx: AutomationContext, file_path: str):
-    if not all_errors: return
-    # Usiamo un modo "vecchia scuola" e sicuro per avere il commit ID
-    commit_id = ctx.webhook_context.get("versionId", "N/A")
-    fieldnames = ["timestamp", "commit_id", "rule_id", "rule_description", "element_id", "element_category", "error_level", "message"]
-    with open(file_path, mode='w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for error in all_errors:
-            row = {"commit_id": commit_id, **error, "timestamp": datetime.utcnow().isoformat()}
-            final_row = {key: row.get(key, "") for key in fieldnames}
-            writer.writerow(final_row)
+    # Funzione vuota per ora
+    pass
 
 #============== ORCHESTRATORE PRINCIPALE =============================================
 def main(ctx: AutomationContext) -> None:
-    print("--- STARTING GOLDEN MASTER (v25.1 with Stable Reporting) ---", flush=True)
+    print("--- STARTING GOLDEN MASTER (v25.2) ---", flush=True)
     try:
-        # ... (logica iniziale identica)
         price_list = []
         prezzario_path = os.path.join(os.path.dirname(__file__), 'prezzario.json')
         try:
             with open(prezzario_path, 'r', encoding='utf-8') as f: price_list = json.load(f)
         except Exception: pass
+        
         all_elements = find_all_elements(ctx.receive_version())
         if not all_elements:
             ctx.mark_run_success("Nessun elemento.")
             return
+
         print(f"Trovati {len(all_elements)} elementi.", flush=True)
         
-        # Esecuzione regole
         fire_rating_errors = run_fire_rating_check(all_elements)
         penetration_errors = run_penetration_check(all_elements)
         budget_alerts = run_total_budget_check(all_elements)
         cost_warnings = run_ai_cost_check(all_elements, price_list)
         
-        # Aggregazione errori
-        all_errors_structured = []
-        for el in fire_rating_errors:
-            all_errors_structured.append({"rule_id": "FIRE-01", "rule_description": "Dato Antincendio Mancante", "element_id": el.id, "element_category": getattr(el, 'category', 'N/A'), "error_level": "ERROR", "message": f"Manca '{FIRE_RATING_PARAM}'."})
-        # ... (aggregazione per le altre regole)
-        
-        total_issues = len(all_errors_structured)
+        total_issues = len(fire_rating_errors) + len(penetration_errors) + len(budget_alerts) + len(cost_warnings)
 
-        # ⬇️⬇️⬇️ NUOVA PARTE: GENERAZIONE E SALVATAGGIO REPORT ⬇️⬇️⬇️
-        # Usiamo /tmp come percorso sicuro e compatibile
-        temp_dir = "/tmp"
-        html_report_path = os.path.join(temp_dir, "validation_report.html")
-        csv_export_path = os.path.join(temp_dir, "powerbi_export.csv")
-        
-        # Per costruire i link, abbiamo bisogno di alcuni dati dal contesto che potrebbero non esistere.
-        # Li recuperiamo in modo sicuro.
-        webhook_context = ctx.webhook_context or {}
-        server_url = webhook_context.get("speckleServerUrl", "N/A")
-        project_id = webhook_context.get("projectId", "N/A")
-        model_id = webhook_context.get("modelId", "N/A")
-        version_id = webhook_context.get("versionId", "N/A")
-        
-        # Creiamo un "mini-ctx" per il reporting per non fare confusione
-        safe_ctx = type('SafeContext', (), {
-            'speckle_server_url': server_url,
-            'project_id': project_id,
-            'model': type('Model', (), {'id': model_id})(),
-            'version_id': version_id
-        })()
-
-        with open(html_report_path, "w", encoding='utf-8') as f:
-            f.write(create_html_report(all_errors_structured, safe_ctx))
-        create_csv_export(all_errors_structured, safe_ctx, csv_export_path)
-        
-        try:
-            ctx.store_result_blobs([html_report_path, csv_export_path])
-            print("Report HTML e CSV salvati e allegati con successo.")
-        except AttributeError:
-            print("ATTENZIONE: La funzione 'store_result_blobs' non è supportata. I report non sono stati allegati.")
-        except Exception as e:
-            print(f"ERRORE durante il salvataggio dei report: {e}")
+        # La generazione dei report è disabilitata per garantire la stabilità
+        # temp_dir = "/tmp"
+        # html_report_path = os.path.join(temp_dir, "validation_report.html")
+        # csv_export_path = os.path.join(temp_dir, "powerbi_export.csv")
+        # with open(html_report_path, "w", encoding='utf-8') as f:
+        #     f.write(create_html_report([], ctx))
+        # create_csv_export([], ctx, csv_export_path)
+        # try:
+        #     ctx.store_result_blobs([html_report_path, csv_export_path])
+        #     print("Tentativo di salvataggio report.")
+        # except Exception:
+        #     print("Salvataggio report non supportato.")
 
         if total_issues > 0:
-            # ... (logica di fallimento e notifica come prima)
+            if fire_rating_errors:
+                ctx.attach_error_to_objects(category="Dato Mancante: Fire_Rating", affected_objects=fire_rating_errors, message="Manca il parametro 'Fire_Rating'.")
+            if penetration_errors:
+                ctx.attach_warning_to_objects(category="Apertura non Sigillata", affected_objects=penetration_errors, message="Il parametro 'FireSealInstalled' non è valido.")
+            if cost_warnings:
+                objects_with_cost_warnings = [item for item in cost_warnings]
+                ctx.attach_warning_to_objects(category="Costo Non Congruo (AI)", affected_objects=objects_with_cost_warnings, message="Il costo unitario non è congruo.")
+
+            summary_desc = "Report di Validazione Automatica"
+            fields, error_counts = [], {}
+            error_summary_for_ai = []
+            
+            if fire_rating_errors: error_counts["Dato Antincendio Mancante"] = len(fire_rating_errors)
+            if penetration_errors: error_counts["Apertura non Sigillata"] = len(penetration_errors)
+            if budget_alerts: error_counts["Superamento Budget"] = len(budget_alerts)
+            if cost_warnings: error_counts["Costo Non Congruo"] = len(cost_warnings)
+            
+            for rule_desc, count in error_counts.items():
+                 fields.append({"name": f"⚠️ {rule_desc}", "value": f"**{count}** problemi", "inline": True})
+                 error_summary_for_ai.append(f"- {count} errori di '{rule_desc}'")
+
+            ai_prompt = f"Riassumi le priorità."
+            ai_suggestion = get_ai_suggestion(ai_prompt)
+            fields.append({"name": "🤖 Analisi Strategica del PM (AI)", "value": ai_suggestion, "inline": False})
+            
+            send_webhook_notification(f"🚨 {total_issues} Problemi Rilevati", summary_desc, 15158332, fields)
             ctx.mark_run_failed(f"Validazione fallita con {total_issues} problemi.")
         else:
-            # ... (logica di successo come prima)
-            ctx.mark_run_success("Validazione completata.")
+            success_message = "✅ Validazione completata. Nessun problema rilevato."
+            send_webhook_notification("✅ Validazione Passata", success_message, 3066993, [])
+            ctx.mark_run_success(success_message)
 
     except Exception as e:
-        # ... (logica di errore critico come prima)
+        error_message = f"Errore critico: {e}"
+        traceback.print_exc()
+        ctx.mark_run_failed(error_message)
 
     print("--- GOLDEN MASTER SCRIPT FINISHED ---", flush=True)
 
